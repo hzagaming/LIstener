@@ -1,13 +1,37 @@
 import { tracks } from '../data/catalog'
-import { isMusicSource, isTrack } from '../types/music'
-import type { MusicProvider, MusicSource, Track } from '../types/music'
+import { isMusicIdentification, isMusicSource, isTrack } from '../types/music'
+import type {
+  DownloadDescriptor, Lyrics, MusicIdentification, MusicProvider, MusicSource,
+  ProviderStatus, SourceCapabilities, Track,
+} from '../types/music'
 
 const labels: Record<MusicSource, string> = {
   netease: '网易云',
   qq: 'QQ 音乐',
   kugou: '酷狗',
+  kuwo: '酷我',
+  qianqian: '千千',
+  '1ting': '一听',
+  migu: '咪咕',
+  lizhi: '荔枝',
+  qingting: '蜻蜓 FM',
+  ximalaya: '喜马拉雅',
+  '5sing-original': '5sing 原创',
+  '5sing-cover': '5sing 翻唱',
+  qmkg: '全民 K 歌',
   apple: 'Apple Music',
+  local: '本地音乐',
   demo: '演示源',
+}
+
+const mediaUrl = (value: unknown, allowBlob = false) => {
+  if (typeof value !== 'string') return null
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:', ...(allowBlob ? ['blob:'] : [])].includes(url.protocol) ? url.toString() : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -33,8 +57,20 @@ class DemoProvider implements MusicProvider {
     return track.audioUrl
   }
 
-  async status() {
-    return { online: false, sources: ['demo'] as MusicSource[] }
+  async identify(): Promise<null> { return null }
+
+  async lookup(): Promise<Track> { throw new Error('演示源不支持 ID 查询') }
+
+  async lyrics(): Promise<Lyrics> { throw new Error('演示音频没有歌词') }
+
+  async download(): Promise<DownloadDescriptor> { throw new Error('演示音频未开放下载') }
+
+  async status(): Promise<ProviderStatus> {
+    return {
+      online: false,
+      sources: ['demo'],
+      capabilities: { demo: { search: true, playback: true, lyrics: false, download: false } },
+    }
   }
 }
 
@@ -67,7 +103,11 @@ class ApiProvider implements MusicProvider {
   }
 
   async resolve(track: Track): Promise<string> {
-    if (track.audioUrl) return track.audioUrl
+    if (track.audioUrl) {
+      const directUrl = mediaUrl(track.audioUrl, track.source === 'local')
+      if (!directUrl) throw new Error('音源地址无效')
+      return directUrl
+    }
     try {
       const url = new URL('/api/resolve', this.baseUrl)
       url.searchParams.set('source', track.source)
@@ -78,8 +118,9 @@ class ApiProvider implements MusicProvider {
       })
       if (!response.ok) throw new Error(`resolve failed: ${response.status}`)
       const payload = await response.json() as { url?: string }
-      if (!payload.url) throw new Error('invalid resolve response')
-      return payload.url
+      const resolvedUrl = mediaUrl(payload.url)
+      if (!resolvedUrl) throw new Error('invalid resolve response')
+      return resolvedUrl
     } catch {
       const fallbackUrl = await this.fallback.resolve(track)
       if (!fallbackUrl) throw new Error('音源解析失败')
@@ -87,7 +128,53 @@ class ApiProvider implements MusicProvider {
     }
   }
 
-  async status() {
+  async identify(input: string, source?: MusicSource): Promise<MusicIdentification | null> {
+    const url = new URL('/api/identify', this.baseUrl)
+    url.searchParams.set('input', input.trim())
+    if (source) url.searchParams.set('source', source)
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(6_000) })
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error(`identify failed: ${response.status}`)
+    const payload = await response.json() as { match?: unknown }
+    return isMusicIdentification(payload.match) ? payload.match : null
+  }
+
+  async lookup(match: MusicIdentification): Promise<Track> {
+    const url = new URL('/api/track', this.baseUrl)
+    url.searchParams.set('source', match.source)
+    url.searchParams.set('id', match.id)
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
+    if (!response.ok) throw new Error(`lookup failed: ${response.status}`)
+    const payload = await response.json() as { track?: unknown }
+    if (!isTrack(payload.track)) throw new Error('invalid track response')
+    return payload.track
+  }
+
+  async lyrics(track: Track): Promise<Lyrics> {
+    const url = new URL('/api/lyrics', this.baseUrl)
+    url.searchParams.set('source', track.source)
+    url.searchParams.set('id', track.id)
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
+    if (!response.ok) throw new Error(`lyrics failed: ${response.status}`)
+    const payload = await response.json() as Partial<Lyrics>
+    if (typeof payload.plain !== 'string' || typeof payload.lrc !== 'string') throw new Error('invalid lyrics response')
+    return payload as Lyrics
+  }
+
+  async download(track: Track): Promise<DownloadDescriptor> {
+    const url = new URL('/api/download', this.baseUrl)
+    url.searchParams.set('source', track.source)
+    url.searchParams.set('id', track.id)
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
+    if (!response.ok) throw new Error(`download failed: ${response.status}`)
+    const payload = await response.json() as Partial<DownloadDescriptor>
+    if (typeof payload.url !== 'string' || typeof payload.filename !== 'string') throw new Error('invalid download response')
+    const target = new URL(payload.url)
+    if (!['http:', 'https:'].includes(target.protocol)) throw new Error('unsafe download response')
+    return { url: target.toString(), filename: payload.filename }
+  }
+
+  async status(): Promise<ProviderStatus> {
     try {
       const url = new URL('/api/health', this.baseUrl)
       const response = await fetch(url, {
@@ -95,11 +182,14 @@ class ApiProvider implements MusicProvider {
         signal: AbortSignal.timeout(4_000),
       })
       if (!response.ok) throw new Error(`health failed: ${response.status}`)
-      const payload = await response.json() as { status?: string; sources?: unknown[] }
+      const payload = await response.json() as { status?: string; sources?: unknown[]; capabilities?: unknown }
       if (payload.status !== 'ok' || !Array.isArray(payload.sources)) throw new Error('invalid health response')
       const sources = payload.sources.filter(isMusicSource)
       if (!sources.length) throw new Error('no music sources available')
-      return { online: true, sources }
+      const capabilities = payload.capabilities && typeof payload.capabilities === 'object'
+        ? payload.capabilities as Partial<Record<MusicSource, SourceCapabilities>>
+        : {}
+      return { online: true, sources, capabilities }
     } catch {
       return this.fallback.status()
     }

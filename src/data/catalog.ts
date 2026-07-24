@@ -3,15 +3,29 @@ import type { Playlist, Track } from '../types/music'
 const audio = (index: number) =>
   `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${index}.mp3`
 
+const demo = (id: string, title: string, cover: string): Track => ({
+  id,
+  title,
+  artist: 'SoundHelix',
+  album: 'Listener 合法演示音频',
+  duration: 0,
+  source: 'demo',
+  audioUrl: audio(Number(id)),
+  cover,
+  sourceUrl: audio(Number(id)),
+  quality: 'standard',
+  capabilities: { playback: 'full', lyrics: false, download: false },
+})
+
 export const tracks: Track[] = [
-  { id: '1', title: '橘子海', artist: '夏日入侵企画', album: '想去海边', duration: 278, source: 'netease', audioUrl: audio(1), cover: 'sunset', liked: true },
-  { id: '2', title: '晚风心里吹', artist: '阿梨粤', album: '晚风心里吹', duration: 189, source: 'qq', audioUrl: audio(2), cover: 'blue' },
-  { id: '3', title: 'Somewhere Only We Know', artist: 'Keane', album: 'Hopes and Fears', duration: 237, source: 'kugou', audioUrl: audio(3), cover: 'field' },
-  { id: '4', title: '我想念', artist: '汪苏泷', album: '联名', duration: 205, source: 'netease', audioUrl: audio(4), cover: 'night' },
-  { id: '5', title: 'Golden Hour', artist: 'JVKE', album: 'this is what ____ feels like', duration: 209, source: 'qq', audioUrl: audio(5), cover: 'gold' },
-  { id: '6', title: '凄美地', artist: '郭顶', album: '飞行器的执行周期', duration: 250, source: 'netease', audioUrl: audio(6), cover: 'forest' },
-  { id: '7', title: 'City of Stars', artist: 'Ryan Gosling', album: 'La La Land', duration: 149, source: 'kugou', audioUrl: audio(7), cover: 'violet' },
-  { id: '8', title: '鲜花', artist: '回春丹', album: '鲜花', duration: 267, source: 'qq', audioUrl: audio(8), cover: 'flower' },
+  { ...demo('1', 'Coastal Motion', 'sunset'), liked: true },
+  demo('2', 'Blue Hour', 'blue'),
+  demo('3', 'Open Field', 'field'),
+  demo('4', 'Night Walk', 'night'),
+  demo('5', 'Golden Light', 'gold'),
+  demo('6', 'Green Signal', 'forest'),
+  demo('7', 'Violet City', 'violet'),
+  demo('8', 'Late Flowers', 'flower'),
 ]
 
 export const playlists: Playlist[] = [

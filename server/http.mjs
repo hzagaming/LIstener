@@ -57,7 +57,11 @@ export const createApiHandler = ({
 
     try {
       if (url.pathname === '/api/health') {
-        return writeJson(response, 200, { status: 'ok', sources: service.sources }, corsHeaders)
+        return writeJson(response, 200, {
+          status: 'ok',
+          sources: service.sources,
+          capabilities: service.sourceCapabilities,
+        }, corsHeaders)
       }
       if (url.pathname === '/api/search') {
         const query = url.searchParams.get('q')?.trim()
@@ -79,11 +83,47 @@ export const createApiHandler = ({
         }
         return writeJson(response, 200, { url: await service.resolve(source, id) }, corsHeaders)
       }
+      if (url.pathname === '/api/identify') {
+        const input = url.searchParams.get('input')?.trim()
+        const source = url.searchParams.get('source')?.trim()
+        if (!input) return writeJson(response, 400, errorPayload('INVALID_INPUT', 'input is required'), corsHeaders)
+        const match = service.identify(input, source)
+        if (!match) return writeJson(response, 404, errorPayload('UNRECOGNIZED_INPUT', 'music input was not recognized'), corsHeaders)
+        return writeJson(response, 200, { match }, corsHeaders)
+      }
+      if (url.pathname === '/api/lyrics' || url.pathname === '/api/download') {
+        const source = url.searchParams.get('source')?.trim()
+        const id = url.searchParams.get('id')?.trim()
+        if (!source || !id) {
+          return writeJson(response, 400, errorPayload('INVALID_TRACK', 'source and id are required'), corsHeaders)
+        }
+        if (url.pathname === '/api/lyrics') {
+          return writeJson(response, 200, await service.lyrics(source, id), corsHeaders)
+        }
+        return writeJson(response, 200, await service.download(source, id), corsHeaders)
+      }
+      if (url.pathname === '/api/track') {
+        const source = url.searchParams.get('source')?.trim()
+        const id = url.searchParams.get('id')?.trim()
+        if (!source || !id) {
+          return writeJson(response, 400, errorPayload('INVALID_TRACK', 'source and id are required'), corsHeaders)
+        }
+        return writeJson(response, 200, { track: await service.lookup(source, id) }, corsHeaders)
+      }
       return writeJson(response, 404, errorPayload('NOT_FOUND', 'route not found'), corsHeaders)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown error'
       if (message === 'unknown music source') {
         return writeJson(response, 404, errorPayload('UNKNOWN_SOURCE', message), corsHeaders)
+      }
+      if (error && typeof error === 'object' && error.code === 'TRACK_NOT_FOUND') {
+        return writeJson(response, 404, errorPayload('TRACK_NOT_FOUND', message), corsHeaders)
+      }
+      if (/^invalid .+ track id$/i.test(message)) {
+        return writeJson(response, 400, errorPayload('INVALID_TRACK', message), corsHeaders)
+      }
+      if (message.includes('unavailable for this source')) {
+        return writeJson(response, 403, errorPayload('CAPABILITY_UNAVAILABLE', message), corsHeaders)
       }
       return writeJson(response, 502, errorPayload('UPSTREAM_FAILED', message), corsHeaders)
     }

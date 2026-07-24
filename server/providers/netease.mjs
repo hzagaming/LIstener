@@ -1,6 +1,11 @@
 const DEFAULT_SEARCH_URL = 'https://music.163.com/api/search/get/web'
 const DEFAULT_MEDIA_URL = 'https://music.163.com/song/media/outer/url'
 
+const normalizeDuration = (milliseconds) => {
+  const value = Number(milliseconds)
+  return Number.isFinite(value) ? Math.max(0, Math.round(value / 1_000)) : 0
+}
+
 const normalizeSong = (song) => {
   const artists = song.artists ?? song.ar
   const album = song.album ?? song.al
@@ -11,10 +16,13 @@ const normalizeSong = (song) => {
     title: String(song.name),
     artist: artists.map((artist) => artist?.name).filter(Boolean).join(' / ') || '未知歌手',
     album: String(album?.name || '未知专辑'),
-    duration: Math.max(0, Math.round(Number(song.duration ?? song.dt ?? 0) / 1_000)),
+    duration: normalizeDuration(song.duration ?? song.dt),
     source: 'netease',
     audioUrl: '',
     cover: String(album?.picUrl || 'night'),
+    sourceUrl: `https://music.163.com/#/song?id=${song.id}`,
+    quality: 'unknown',
+    capabilities: { playback: 'full', lyrics: false, download: false },
   }
 }
 
@@ -25,8 +33,9 @@ export const createNeteaseProvider = ({
   timeoutMs = 8_000,
 } = {}) => ({
   id: 'netease',
+  capabilities: { search: true, playback: true, lyrics: false, download: false },
 
-  async search(query, limit = 20) {
+  async search(query, limit = 20, signal) {
     const body = new URLSearchParams({
       s: query.trim(),
       type: '1',
@@ -40,10 +49,10 @@ export const createNeteaseProvider = ({
         Accept: 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
         Referer: 'https://music.163.com/',
-        'User-Agent': 'Listener/0.2 (+music metadata search)',
+        'User-Agent': 'Listener/0.3 (+music metadata search)',
       },
       body,
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     })
     if (!response.ok) throw new Error(`NetEase search failed: ${response.status}`)
 

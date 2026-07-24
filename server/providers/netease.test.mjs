@@ -34,12 +34,35 @@ test('normalizes NetEase search results into Track objects', async () => {
     source: 'netease',
     audioUrl: '',
     cover: 'https://img.example/42.jpg',
+    sourceUrl: 'https://music.163.com/#/song?id=42',
+    quality: 'unknown',
+    capabilities: { playback: 'full', lyrics: false, download: false },
   }])
 })
 
 test('rejects malformed upstream search responses', async () => {
   const provider = createNeteaseProvider({ fetchImpl: async () => Response.json({ result: {} }) })
   await assert.rejects(() => provider.search('test', 10), /invalid NetEase search response/)
+})
+
+test('normalizes malformed and non-finite NetEase durations to zero', async () => {
+  const provider = createNeteaseProvider({
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          result: {
+            songs: [
+              { id: 1, name: 'one', artists: [], duration: 'invalid' },
+              { id: 2, name: 'two', artists: [], duration: Infinity },
+            ],
+          },
+        }
+      },
+    }),
+  })
+
+  assert.deepEqual((await provider.search('test')).map(({ duration }) => duration), [0, 0])
 })
 
 test('reports region-encrypted responses explicitly', async () => {

@@ -10,6 +10,7 @@ const song = {
   trackTimeMillis: 269747,
   previewUrl: 'https://audio.example/42.m4a',
   artworkUrl100: 'https://img.example/100x100bb.jpg',
+  trackViewUrl: 'https://music.apple.com/cn/song/42',
 }
 
 test('normalizes Apple search results with playable previews', async () => {
@@ -30,6 +31,9 @@ test('normalizes Apple search results with playable previews', async () => {
     source: 'apple',
     audioUrl: 'https://audio.example/42.m4a',
     cover: 'https://img.example/600x600bb.jpg',
+    sourceUrl: 'https://music.apple.com/cn/song/42',
+    quality: 'standard',
+    capabilities: { playback: 'preview', lyrics: false, download: false },
   }])
   assert.equal(requestedUrl.searchParams.get('term'), '周杰伦')
   assert.equal(requestedUrl.searchParams.get('limit'), '5')
@@ -43,11 +47,51 @@ test('filters results without a playable preview', async () => {
   assert.deepEqual(await provider.search('test'), [])
 })
 
+test('normalizes malformed and non-finite Apple durations to zero', async () => {
+  const provider = createAppleProvider({
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          results: [
+            { ...song, trackId: 1, trackTimeMillis: 'invalid' },
+            { ...song, trackId: 2, trackTimeMillis: Infinity },
+          ],
+        }
+      },
+    }),
+  })
+
+  assert.deepEqual((await provider.search('test')).map(({ duration }) => duration), [0, 0])
+})
+
 test('resolves a preview URL through the lookup endpoint', async () => {
   const provider = createAppleProvider({
     fetchImpl: async () => Response.json({ resultCount: 1, results: [song] }),
   })
   assert.equal(await provider.resolve('42'), 'https://audio.example/42.m4a')
+  assert.equal((await provider.lookup('42'))?.title, '晴天')
+})
+
+test('looks up valid Apple metadata without requiring a preview', async () => {
+  const provider = createAppleProvider({
+    fetchImpl: async () => Response.json({ results: [{ ...song, previewUrl: undefined }] }),
+  })
+
+  const result = await provider.lookup('42')
+  assert.equal(result.audioUrl, '')
+  assert.equal(result.quality, 'unknown')
+  assert.deepEqual(result.capabilities, { playback: 'none', lyrics: false, download: false })
+  await assert.rejects(() => provider.resolve('42'), /preview is unavailable/)
+})
+
+test('reports missing Apple tracks explicitly', async () => {
+  const provider = createAppleProvider({ fetchImpl: async () => Response.json({ results: [] }) })
+  await assert.rejects(() => provider.lookup('404'), (error) => {
+    assert.equal(error.code, 'TRACK_NOT_FOUND')
+    assert.match(error.message, /not found/)
+    return true
+  })
 })
 
 test('rejects malformed Apple responses', async () => {

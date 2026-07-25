@@ -42,6 +42,52 @@ test('coalesces concurrent searches and caches normalized queries', async () => 
   assert.equal(calls, 1)
 })
 
+test('keeps a coalesced search alive until its last subscriber cancels', async () => {
+  let calls = 0
+  let providerSignal
+  let markStarted
+  let releaseFirst
+  const started = new Promise((resolve) => { markStarted = resolve })
+  const provider = {
+    id: 'netease',
+    async search(_query, _limit, signal) {
+      calls += 1
+      if (calls > 1) return [track('2')]
+      providerSignal = signal
+      markStarted()
+      return new Promise((resolve, reject) => {
+        releaseFirst = resolve
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    },
+  }
+  const service = createMusicService({ providers: [provider] })
+  const firstController = new AbortController()
+  const secondController = new AbortController()
+  const first = service.search('song', 20, firstController.signal)
+  const second = service.search('SONG', 20, secondController.signal)
+  const firstOutcome = first.then(() => null, (error) => error)
+  const secondOutcome = second.then(() => null, (error) => error)
+  await started
+
+  try {
+    firstController.abort(new Error('first cancelled'))
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(providerSignal.aborted, false)
+
+    secondController.abort(new Error('second cancelled'))
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(providerSignal.aborted, true)
+    assert.match((await firstOutcome).message, /first cancelled/)
+    assert.match((await secondOutcome).message, /second cancelled/)
+    assert.deepEqual(await service.search('song'), [track('2')])
+    assert.equal(calls, 2)
+  } finally {
+    releaseFirst?.([])
+    await Promise.allSettled([first, second])
+  }
+})
+
 test('keeps equivalent tracks from different providers but removes exact source duplicates', async () => {
   const providers = [
     { id: 'netease', search: async () => [track('1', ' Same Song '), track('1', ' Same Song ')], resolve: async () => '' },
@@ -199,6 +245,17 @@ test('keeps lyrics and download disabled unless explicitly declared', async () =
   })
   await assert.rejects(() => service.lyrics('implicit', '1'), /lyrics are unavailable/)
   await assert.rejects(() => service.download('implicit', '1'), /download is unavailable/)
+})
+
+test('gates playback for metadata-only providers', async () => {
+  const service = createMusicService({ providers: [{
+    id: 'metadata',
+    capabilities: { search: true, playback: false, lyrics: false, download: false },
+    search: async () => [],
+  }] })
+
+  assert.equal(service.sourceCapabilities.metadata.playback, false)
+  await assert.rejects(() => service.resolve('metadata', '1'), /playback is unavailable/)
 })
 
 test('exposes provider capabilities and gates lyrics and downloads', async () => {

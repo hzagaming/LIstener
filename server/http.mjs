@@ -73,7 +73,21 @@ export const createApiHandler = ({
         if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
           return writeJson(response, 400, errorPayload('INVALID_LIMIT', 'limit must be between 1 and 50'), corsHeaders)
         }
-        return writeJson(response, 200, { tracks: await service.search(query, limit) }, corsHeaders)
+        const controller = new AbortController()
+        const abortSearch = () => controller.abort(new Error('search client disconnected'))
+        const handleResponseClose = () => {
+          if (!response.writableEnded) abortSearch()
+        }
+        request.once('aborted', abortSearch)
+        response.once('close', handleResponseClose)
+        try {
+          const tracks = await service.search(query, limit, controller.signal)
+          if (controller.signal.aborted || response.destroyed) return
+          return writeJson(response, 200, { tracks }, corsHeaders)
+        } finally {
+          request.removeListener('aborted', abortSearch)
+          response.removeListener('close', handleResponseClose)
+        }
       }
       if (url.pathname === '/api/resolve') {
         const source = url.searchParams.get('source')?.trim()
@@ -112,6 +126,7 @@ export const createApiHandler = ({
       }
       return writeJson(response, 404, errorPayload('NOT_FOUND', 'route not found'), corsHeaders)
     } catch (error) {
+      if (response.destroyed || response.writableEnded) return
       const message = error instanceof Error ? error.message : 'unknown error'
       if (message === 'unknown music source') {
         return writeJson(response, 404, errorPayload('UNKNOWN_SOURCE', message), corsHeaders)
@@ -122,7 +137,8 @@ export const createApiHandler = ({
       if (/^invalid .+ track id$/i.test(message)) {
         return writeJson(response, 400, errorPayload('INVALID_TRACK', message), corsHeaders)
       }
-      if (message.includes('unavailable for this source')) {
+      if ((error && typeof error === 'object' && error.code === 'CAPABILITY_UNAVAILABLE')
+        || message.includes('unavailable for this source')) {
         return writeJson(response, 403, errorPayload('CAPABILITY_UNAVAILABLE', message), corsHeaders)
       }
       return writeJson(response, 502, errorPayload('UPSTREAM_FAILED', message), corsHeaders)

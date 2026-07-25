@@ -1,6 +1,7 @@
 export const musicSources = [
   'netease', 'qq', 'kugou', 'kuwo', 'qianqian', '1ting', 'migu', 'lizhi',
-  'qingting', 'ximalaya', '5sing-original', '5sing-cover', 'qmkg', 'apple', 'local', 'demo',
+  'qingting', 'ximalaya', '5sing-original', '5sing-cover', 'qmkg', 'apple',
+  'musicbrainz', 'audius', 'local', 'demo',
 ] as const
 export type MusicSource = typeof musicSources[number]
 

@@ -33,7 +33,7 @@ export const createAppleProvider = ({
 } = {}) => {
   const request = async (url, signal) => {
     const response = await fetchImpl(url, {
-      headers: { Accept: 'application/json', 'User-Agent': 'Listener/0.3 (+music metadata search)' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Listener/0.4.0 (+music metadata search)' },
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     })
     if (!response.ok) throw new Error(`Apple music request failed: ${response.status}`)
@@ -62,12 +62,13 @@ export const createAppleProvider = ({
     },
 
     async lookup(id, signal) {
-      if (!/^\d+$/.test(id)) throw new Error('invalid Apple track id')
+      const requestedId = String(id)
+      if (!/^\d+$/.test(requestedId)) throw new Error('invalid Apple track id')
       const url = new URL(lookupUrl)
-      url.searchParams.set('id', id)
+      url.searchParams.set('id', requestedId)
       url.searchParams.set('entity', 'song')
       url.searchParams.set('country', country)
-      const track = (await request(url, signal)).map(normalizeSong).find(Boolean)
+      const track = (await request(url, signal)).map(normalizeSong).find((song) => song?.id === requestedId)
       if (!track) throw Object.assign(new Error('Apple track not found'), { code: 'TRACK_NOT_FOUND' })
       return track
     },

@@ -49,7 +49,7 @@ export const createNeteaseProvider = ({
         Accept: 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
         Referer: 'https://music.163.com/',
-        'User-Agent': 'Listener/0.3 (+music metadata search)',
+        'User-Agent': 'Listener/0.4.0 (+music metadata search)',
       },
       body,
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),

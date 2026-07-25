@@ -31,16 +31,34 @@ const isTrack = (track) => track && typeof track === 'object'
   && typeof track.capabilities.lyrics === 'boolean'
   && typeof track.capabilities.download === 'boolean'
 
-const withTimeout = (operation, timeoutMs) => new Promise((resolve, reject) => {
+const abortReason = (signal) => signal?.reason ?? new Error('operation aborted')
+
+const withTimeout = (operation, timeoutMs, externalSignal) => new Promise((resolve, reject) => {
   const controller = new AbortController()
-  const timer = setTimeout(() => {
-    controller.abort(new Error('music provider timed out'))
-    reject(controller.signal.reason)
-  }, timeoutMs)
+  let settled = false
+  let timer
+  const cleanup = () => {
+    clearTimeout(timer)
+    externalSignal?.removeEventListener('abort', onExternalAbort)
+  }
+  const settle = (callback, value) => {
+    if (settled) return
+    settled = true
+    cleanup()
+    callback(value)
+  }
+  const abort = (reason) => {
+    controller.abort(reason)
+    settle(reject, reason)
+  }
+  const onExternalAbort = () => abort(abortReason(externalSignal))
+
+  if (externalSignal?.aborted) return onExternalAbort()
+  externalSignal?.addEventListener('abort', onExternalAbort, { once: true })
+  timer = setTimeout(() => abort(new Error('music provider timed out')), timeoutMs)
   Promise.resolve()
     .then(() => operation(controller.signal))
-    .then(resolve, reject)
-    .finally(() => clearTimeout(timer))
+    .then((value) => settle(resolve, value), (error) => settle(reject, error))
 })
 
 const getProvider = (providerById, source) => {
@@ -64,19 +82,61 @@ export const createMusicService = ({
     { ...defaultCapabilities(provider), ...provider.capabilities },
   ]))
 
-  const search = async (query, requestedLimit = 20) => {
+  const subscribe = (key, entry, signal) => new Promise((resolve, reject) => {
+    let active = true
+    entry.subscribers += 1
+    const cleanup = () => {
+      if (!active) return false
+      active = false
+      entry.subscribers -= 1
+      signal?.removeEventListener('abort', onAbort)
+      return true
+    }
+    const onAbort = () => {
+      if (!cleanup()) return
+      const reason = abortReason(signal)
+      reject(reason)
+      if (!entry.settled && entry.subscribers === 0) {
+        if (inFlight.get(key) === entry) inFlight.delete(key)
+        entry.controller.abort(reason)
+      }
+    }
+
+    signal?.addEventListener('abort', onAbort, { once: true })
+    entry.promise.then(
+      (tracks) => {
+        if (!cleanup()) return
+        resolve(tracks)
+      },
+      (error) => {
+        if (!cleanup()) return
+        reject(error)
+      },
+    )
+  })
+
+  const search = async (query, requestedLimit = 20, signal) => {
+    if (signal?.aborted) throw abortReason(signal)
     const normalizedQuery = normalize(query)
     if (!normalizedQuery) throw new Error('query is required')
     const limit = Math.min(50, Math.max(1, requestedLimit))
     const key = `${normalizedQuery}:${limit}`
     const cached = cache.get(key)
     if (cached && cached.expiresAt > now()) return cached.tracks
-    if (inFlight.has(key)) return inFlight.get(key)
+    const pending = inFlight.get(key)
+    if (pending) return subscribe(key, pending, signal)
 
-    const request = (async () => {
+    const controller = new AbortController()
+    const entry = { controller, subscribers: 0, settled: false, promise: null }
+    entry.promise = (async () => {
       const results = await Promise.allSettled(
-        providers.map((provider) => withTimeout((signal) => provider.search(query.trim(), limit, signal), providerTimeoutMs)),
+        providers.map((provider) => withTimeout(
+          (providerSignal) => provider.search(query.trim(), limit, providerSignal),
+          providerTimeoutMs,
+          controller.signal,
+        )),
       )
+      if (controller.signal.aborted) throw abortReason(controller.signal)
       const providerTracks = results.flatMap((result, index) => {
         if (result.status !== 'fulfilled' || !Array.isArray(result.value)) return []
         const valid = result.value.filter((track) => isTrack(track) && track.source === providers[index].id)
@@ -109,18 +169,20 @@ export const createMusicService = ({
       }
       cache.set(key, { tracks, expiresAt: timestamp + ttlMs })
       return tracks
-    })()
+    })().finally(() => {
+      entry.settled = true
+      if (inFlight.get(key) === entry) inFlight.delete(key)
+    })
 
-    inFlight.set(key, request)
-    try {
-      return await request
-    } finally {
-      inFlight.delete(key)
-    }
+    inFlight.set(key, entry)
+    return subscribe(key, entry, signal)
   }
 
   const resolve = async (source, id) => {
     const provider = getProvider(providerById, source)
+    if (typeof provider.resolve !== 'function' || provider.capabilities?.playback === false) {
+      throw new Error('playback is unavailable for this source')
+    }
     return withTimeout((signal) => provider.resolve(id, signal), providerTimeoutMs)
   }
 

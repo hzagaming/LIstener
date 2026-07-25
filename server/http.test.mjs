@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createServer } from 'node:http'
+import { createServer, request as requestHttp } from 'node:http'
 import test from 'node:test'
 import { createApiHandler } from './http.mjs'
 
@@ -66,6 +66,35 @@ test('serves search and resolve endpoints', async () => {
   ])
 })
 
+test('aborts a search subscription when its client disconnects', async () => {
+  let markStarted
+  let markAborted
+  let release
+  const started = new Promise((resolve) => { markStarted = resolve })
+  const aborted = new Promise((resolve) => { markAborted = resolve })
+  const service = {
+    async search(_query, _limit, signal) {
+      markStarted()
+      signal?.addEventListener('abort', markAborted, { once: true })
+      return new Promise((resolve) => { release = resolve })
+    },
+  }
+
+  await withServer(createApiHandler({ service }), async (baseUrl) => {
+    const client = requestHttp(`${baseUrl}/api/search?q=cancelled`)
+    client.on('error', () => {})
+    client.end()
+    await started
+    client.destroy()
+    const wasAborted = await Promise.race([
+      aborted.then(() => true),
+      new Promise((resolve) => setTimeout(() => resolve(false), 20)),
+    ])
+    release([])
+    assert.equal(wasAborted, true)
+  })
+})
+
 test('validates requests and returns JSON errors', async () => {
   const service = { search: async () => [], resolve: async () => '', identify: () => null }
 
@@ -126,6 +155,27 @@ test('maps explicit track-not-found failures to 404', async () => {
     assert.equal(response.status, 404)
     assert.deepEqual(await response.json(), {
       error: { code: 'TRACK_NOT_FOUND', message: 'Apple track not found' },
+    })
+  })
+})
+
+test('maps track-level playback restrictions to capability errors', async () => {
+  const service = {
+    async resolve() {
+      throw Object.assign(new Error('Audius track is not publicly streamable'), {
+        code: 'CAPABILITY_UNAVAILABLE',
+      })
+    },
+  }
+
+  await withServer(createApiHandler({ service }), async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/resolve?source=audius&id=D7KyD`)
+    assert.equal(response.status, 403)
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: 'CAPABILITY_UNAVAILABLE',
+        message: 'Audius track is not publicly streamable',
+      },
     })
   })
 })

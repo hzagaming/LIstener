@@ -94,6 +94,21 @@ test('reports missing Apple tracks explicitly', async () => {
   })
 })
 
+test('rejects lookup results that do not match the requested track ID', async () => {
+  const provider = createAppleProvider({
+    fetchImpl: async () => Response.json({ results: [{ ...song, trackId: 43 }] }),
+  })
+
+  await assert.rejects(() => provider.lookup('42'), (error) => {
+    assert.equal(error.code, 'TRACK_NOT_FOUND')
+    return true
+  })
+  await assert.rejects(() => provider.resolve('42'), (error) => {
+    assert.equal(error.code, 'TRACK_NOT_FOUND')
+    return true
+  })
+})
+
 test('rejects malformed Apple responses', async () => {
   const provider = createAppleProvider({ fetchImpl: async () => Response.json({ results: null }) })
   await assert.rejects(() => provider.search('test'), /invalid Apple search response/)

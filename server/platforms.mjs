@@ -2,6 +2,8 @@ const numeric = /^\d+$/
 const alphaNumeric = /^[A-Za-z0-9_-]+$/
 const kugouHash = /^[a-fA-F0-9]{32}$/
 const qingtingId = /^\d+\|\d+$/
+const musicBrainzId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+const audiusId = /^[A-Za-z0-9_-]{1,128}$/
 
 const matchPath = (url, pattern) => pattern.exec(url.pathname)?.[1]
 const queryValue = (url, name) => url.searchParams.get(name) ?? new URLSearchParams(
@@ -125,6 +127,21 @@ const definitions = [
     validate: (id) => numeric.test(id),
     match: (url) => queryValue(url, 'i') ?? matchPath(url, /^\/[^/]+\/song\/(?:[^/]+\/)?(\d+)\/?$/i),
     canonical: (id) => `https://music.apple.com/cn/song/${id}`,
+  },
+  {
+    source: 'musicbrainz',
+    hosts: ['musicbrainz.org'],
+    validate: (id) => musicBrainzId.test(id),
+    normalize: (id) => id.toLowerCase(),
+    match: (url) => matchPath(url, /^\/recording\/([0-9a-f-]+)\/?$/i),
+    canonical: (id) => `https://musicbrainz.org/recording/${id.toLowerCase()}`,
+  },
+  {
+    source: 'audius',
+    hosts: ['api.audius.co'],
+    validate: (id) => audiusId.test(id),
+    match: (url) => matchPath(url, /^\/v1\/tracks\/([A-Za-z0-9_-]+)\/?$/i),
+    canonical: (id) => `https://api.audius.co/v1/tracks/${id}`,
   },
 ]
 

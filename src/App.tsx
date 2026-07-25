@@ -121,12 +121,12 @@ function TrackRow({
   const playbackUnavailable = track.capabilities.playback === 'none'
   const playLabel = playbackUnavailable ? `无法播放 ${track.title}` : pending ? `正在加载 ${track.title}` : current && playing ? `暂停 ${track.title}` : `播放 ${track.title}`
   return (
-    <div className={`track-row ${current ? 'track-row--current' : ''}`}>
+    <div className={`track-row ${current ? 'track-row--current' : ''}`} role="listitem">
       <button className="track-row__play" aria-label={playLabel} title={playbackUnavailable ? '来源未提供可播放音源' : undefined} aria-busy={pending} aria-pressed={current && playing} disabled={playbackUnavailable || pending} onClick={onPlay}>
         <span>{String(index + 1).padStart(2, '0')}</span>{pending ? <LoaderCircle className="spin" /> : current && playing ? <Pause /> : <Play fill="currentColor" />}
       </button>
       <Cover name={track.cover} size="small" />
-      <div className="track-row__title"><strong>{track.title}</strong><span>{track.artist}</span></div>
+      <div className="track-row__title"><strong>{track.title}</strong><span>{track.artist}<small className="track-row__source-mobile"> · {sourceLabel(track.source)}</small></span></div>
       <span className="track-row__album">{track.album}</span>
       <div className="track-row__badges"><SourceBadge track={track} /><span className="quality-badge">{qualityLabels[track.quality]}</span></div>
       <span className="track-row__duration">{formatTime(track.duration)}</span>
@@ -323,6 +323,13 @@ function App() {
   }, [lyricsTrack, mobileNavOpen, playlistModalTrack, queueOpen])
 
   useEffect(() => {
+    if (playlistModalTrack === undefined && !lyricsTrack && !queueOpen && !mobileNavOpen) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previous }
+  }, [lyricsTrack, mobileNavOpen, playlistModalTrack, queueOpen])
+
+  useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
     audio.load()
@@ -445,8 +452,11 @@ function App() {
       const resolvedTrack = { ...target, audioUrl: resolvedUrl }
       setLiked((previous) => previous.has(key) ? new Map(previous).set(key, resolvedTrack) : previous)
       playTrack(resolvedTrack, queueRevision === queueRevisionRef.current ? list : undefined, mode)
-    } catch {
-      if (requestId === playRequestRef.current) showNotice('这首歌暂时没有可用音源')
+    } catch (error) {
+      if (requestId === playRequestRef.current) {
+        const restricted = error instanceof Error && 'code' in error && error.code === 'CAPABILITY_UNAVAILABLE'
+        showNotice(restricted ? '该歌曲当前不允许公开播放' : '这首歌暂时没有可用音源')
+      }
     } finally {
       if (requestId === playRequestRef.current) {
         pendingTrackKeyRef.current = null
@@ -913,7 +923,7 @@ function App() {
           <button className="search-box" onClick={() => navigate('search')}>
             <Search />
             <span>搜索歌曲、歌手或专辑</span>
-            <kbd>⌘ K</kbd>
+            <kbd>⌘/Ctrl K</kbd>
           </button>
           <div className="topbar__actions">
             <div className="source-selector"><span className={`status-dot ${providerStatus.online ? '' : 'offline'}`} />{providerStatus.online ? '聚合服务在线' : '演示模式'}</div>
@@ -1026,7 +1036,7 @@ function App() {
             </div>
             <section className="results-section">
               <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : `共 ${displayResults.length} 首`}</span></div>
-              <div className="track-list">
+              <div className="track-list" role="list">
                 {displayResults.length ? displayResults.map((track, index) => (
                   <TrackRow
                     key={trackKey(track)}
@@ -1061,7 +1071,7 @@ function App() {
             {localTracks.length > 0 && (
               <section className="library-section">
                 <div className="section-heading"><div><span className="section-index">{String(localTracks.length).padStart(2, '0')}</span><h2>本地音乐</h2></div><span className="searching-state">仅保留在当前会话</span></div>
-                <div className="track-list">
+                <div className="track-list" role="list">
                   {localTracks.map((track, index) => (
                     <TrackRow
                       key={trackKey(track)} track={track} index={index}
@@ -1102,7 +1112,7 @@ function App() {
                     <button className="danger" onClick={() => deletePlaylist(selectedPlaylist.id)}><Trash2 />{pendingDeletePlaylistId === selectedPlaylist.id ? '确认删除' : '删除歌单'}</button>
                   </div>
                 </div>
-                <div className="track-list">
+                <div className="track-list" role="list">
                   {selectedPlaylist.tracks.map((track, index) => (
                     <TrackRow
                       key={trackKey(track)} track={track} index={index}
@@ -1124,7 +1134,7 @@ function App() {
 
             <section className="library-section">
               <div className="section-heading"><div><span className="section-index">02</span><h2 ref={likedHeadingRef} tabIndex={-1}>喜欢的音乐</h2></div></div>
-            <div className="track-list">
+            <div className="track-list" role="list">
               {likedTracks.map((track, index) => (
                 <TrackRow
                   key={trackKey(track)} track={track} index={index}
@@ -1212,7 +1222,7 @@ function App() {
           onEnded={handleEnded}
           onError={handleAudioError}
         />
-        <div className="player__track"><Cover name={current.cover} size="small" /><div><strong>{current.title}</strong><span>{current.artist} · {qualityLabels[current.quality]}{current.capabilities.playback === 'preview' ? '试听' : ''}</span></div><button aria-label={`${liked.has(currentKey) ? '取消收藏' : '收藏'} ${current.title}`} className={`like-button ${liked.has(currentKey) ? 'liked' : ''}`} onClick={() => toggleLike(current)}><Heart fill={liked.has(currentKey) ? 'currentColor' : 'none'} /></button></div>
+        <div className="player__track"><Cover name={current.cover} size="small" /><div><strong>{current.title}</strong><span>{current.artist} · {sourceLabel(current.source)} · {qualityLabels[current.quality]}{current.capabilities.playback === 'preview' ? '试听' : ''}</span></div><button aria-label={`${liked.has(currentKey) ? '取消收藏' : '收藏'} ${current.title}`} className={`like-button ${liked.has(currentKey) ? 'liked' : ''}`} onClick={() => toggleLike(current)}><Heart fill={liked.has(currentKey) ? 'currentColor' : 'none'} /></button></div>
         <div className="player__center">
           <div className="player__controls"><button aria-label="随机播放" disabled={queue.length < 2} onClick={shuffle}><Shuffle /></button><button aria-label="上一首" disabled={!queue.length} onClick={() => skip(-1)}><SkipBack fill="currentColor" /></button><button className="play-main" aria-label={current.capabilities.playback === 'none' ? '当前歌曲无法播放' : pendingTrackKey ? '取消加载' : isPlaying ? '暂停' : '播放'} aria-busy={Boolean(pendingTrackKey)} disabled={current.capabilities.playback === 'none'} onClick={togglePlay}>{pendingTrackKey ? <LoaderCircle className="spin" /> : isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button><button aria-label="下一首" disabled={!queue.length} onClick={() => skip(1)}><SkipForward fill="currentColor" /></button><button className={repeatMode === 'off' ? '' : 'active'} aria-label={`循环模式：${repeatMode === 'off' ? '关闭' : repeatMode === 'all' ? '列表循环' : '单曲循环'}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeat}>{repeatMode === 'one' ? <Repeat1 /> : <Repeat />}</button><button aria-label="播放队列" onClick={openQueue}><ListMusic /></button></div>
           <div className="player__progress"><span>{formatTime(seekProgress)}</span><input aria-label="播放进度" aria-valuetext={`${formatTime(seekProgress)} / ${formatTime(seekDuration)}`} disabled={!seekDuration} type="range" min="0" max={seekDuration || 1} step="0.1" value={seekProgress} style={{ '--progress': `${seekDuration ? (seekProgress / seekDuration) * 100 : 0}%` } as React.CSSProperties} onChange={(event) => seekTo(Number(event.target.value))} /><span>{formatTime(seekDuration)}</span></div>

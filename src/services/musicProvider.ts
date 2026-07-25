@@ -20,6 +20,8 @@ const labels: Record<MusicSource, string> = {
   '5sing-cover': '5sing 翻唱',
   qmkg: '全民 K 歌',
   apple: 'Apple Music',
+  musicbrainz: 'MusicBrainz',
+  audius: 'Audius',
   local: '本地音乐',
   demo: '演示源',
 }
@@ -32,6 +34,13 @@ const mediaUrl = (value: unknown, allowBlob = false) => {
   } catch {
     return null
   }
+}
+
+const apiError = async (response: Response, message: string) => {
+  const payload = await response.json().catch(() => null) as { error?: { code?: unknown } } | null
+  const error = new Error(message) as Error & { code?: string }
+  if (typeof payload?.error?.code === 'string') error.code = payload.error.code
+  return error
 }
 
 /**
@@ -108,24 +117,18 @@ class ApiProvider implements MusicProvider {
       if (!directUrl) throw new Error('音源地址无效')
       return directUrl
     }
-    try {
-      const url = new URL('/api/resolve', this.baseUrl)
-      url.searchParams.set('source', track.source)
-      url.searchParams.set('id', track.id)
-      const response = await fetch(url, {
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(10_000),
-      })
-      if (!response.ok) throw new Error(`resolve failed: ${response.status}`)
-      const payload = await response.json() as { url?: string }
-      const resolvedUrl = mediaUrl(payload.url)
-      if (!resolvedUrl) throw new Error('invalid resolve response')
-      return resolvedUrl
-    } catch {
-      const fallbackUrl = await this.fallback.resolve(track)
-      if (!fallbackUrl) throw new Error('音源解析失败')
-      return fallbackUrl
-    }
+    const url = new URL('/api/resolve', this.baseUrl)
+    url.searchParams.set('source', track.source)
+    url.searchParams.set('id', track.id)
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) throw await apiError(response, `resolve failed: ${response.status}`)
+    const payload = await response.json() as { url?: string }
+    const resolvedUrl = mediaUrl(payload.url)
+    if (!resolvedUrl) throw new Error('invalid resolve response')
+    return resolvedUrl
   }
 
   async identify(input: string, source?: MusicSource): Promise<MusicIdentification | null> {

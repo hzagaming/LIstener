@@ -2,6 +2,8 @@ import { createServer } from 'node:http'
 import { createApiHandler } from './http.mjs'
 import { createMusicService } from './musicService.mjs'
 import { createAppleProvider } from './providers/apple.mjs'
+import { createAudiusProvider } from './providers/audius.mjs'
+import { createMusicBrainzProvider } from './providers/musicbrainz.mjs'
 import { createNeteaseProvider } from './providers/netease.mjs'
 
 const port = Number.parseInt(process.env.PORT ?? '3000', 10)
@@ -11,6 +13,16 @@ const providers = [createAppleProvider({
   lookupUrl: process.env.APPLE_LOOKUP_URL,
   country: process.env.APPLE_COUNTRY,
 })]
+if (process.env.MUSICBRAINZ_CONTACT?.trim()) {
+  providers.push(createMusicBrainzProvider({
+    contact: process.env.MUSICBRAINZ_CONTACT,
+  }))
+}
+if (process.env.AUDIUS_API_KEY?.trim()) {
+  providers.push(createAudiusProvider({
+    apiKey: process.env.AUDIUS_API_KEY,
+  }))
+}
 if (process.env.ENABLE_NETEASE === 'true') {
   providers.unshift(createNeteaseProvider({
     searchUrl: process.env.NETEASE_SEARCH_URL,

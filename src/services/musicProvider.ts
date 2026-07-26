@@ -1,4 +1,5 @@
 import { tracks } from '../data/catalog'
+import { createSearchFallbackError } from '../searchLogic.mjs'
 import { isMusicIdentification, isMusicSource, isTrack } from '../types/music'
 import type {
   DownloadDescriptor, Lyrics, MusicIdentification, MusicProvider, MusicSource,
@@ -107,11 +108,14 @@ class ApiProvider implements MusicProvider {
       return payload.tracks
     } catch (error) {
       if (signal?.aborted) throw error
-      return this.fallback.search(query)
+      const fallbackTracks = await this.fallback.search(query, signal)
+      if (signal?.aborted) throw signal.reason ?? error
+      throw createSearchFallbackError(fallbackTracks)
     }
   }
 
-  async resolve(track: Track): Promise<string> {
+  async resolve(track: Track, signal?: AbortSignal): Promise<string> {
+    if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError')
     if (track.audioUrl) {
       const directUrl = mediaUrl(track.audioUrl, track.source === 'local')
       if (!directUrl) throw new Error('音源地址无效')
@@ -122,7 +126,7 @@ class ApiProvider implements MusicProvider {
     url.searchParams.set('id', track.id)
     const response = await fetch(url, {
       headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(10_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
     })
     if (!response.ok) throw await apiError(response, `resolve failed: ${response.status}`)
     const payload = await response.json() as { url?: string }

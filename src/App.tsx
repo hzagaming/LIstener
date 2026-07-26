@@ -6,7 +6,10 @@ import {
   Volume2, VolumeX, Waves, X,
 } from 'lucide-react'
 import { playlists, tracks as initialTracks } from './data/catalog'
-import { playableTracks, preferResolvedCurrent } from './playerLogic.mjs'
+import {
+  endedPlaybackAction, mediaLoadKey, playableTracks, preferResolvedCurrent, removalFocusIndex,
+} from './playerLogic.mjs'
+import { searchFallbackTracks } from './searchLogic.mjs'
 import { musicProvider, sourceLabel } from './services/musicProvider'
 import { isPlaylist, isTrack, musicSources, trackKey } from './types/music'
 import type { MusicIdentification, MusicSource, Playlist, ProviderStatus, Track } from './types/music'
@@ -111,7 +114,7 @@ type TrackRowProps = {
   onPlaylist: () => void
   onLyrics: () => void
   onDownload: () => void
-  onRemove?: () => void
+  onRemove?: (event: React.MouseEvent<HTMLButtonElement>) => void
 }
 
 function TrackRow({
@@ -126,7 +129,11 @@ function TrackRow({
         <span>{String(index + 1).padStart(2, '0')}</span>{pending ? <LoaderCircle className="spin" /> : current && playing ? <Pause /> : <Play fill="currentColor" />}
       </button>
       <Cover name={track.cover} size="small" />
-      <div className="track-row__title"><strong>{track.title}</strong><span>{track.artist}<small className="track-row__source-mobile"> · {sourceLabel(track.source)}</small></span></div>
+      <div className="track-row__title">
+        <strong>{track.title}</strong>
+        <span>{track.artist}<small className="track-row__source-mobile"> · {sourceLabel(track.source)}</small></span>
+        {playbackUnavailable && <small className="track-row__availability">仅元数据 · 不可播放</small>}
+      </div>
       <span className="track-row__album">{track.album}</span>
       <div className="track-row__badges"><SourceBadge track={track} /><span className="quality-badge">{qualityLabels[track.quality]}</span></div>
       <span className="track-row__duration">{formatTime(track.duration)}</span>
@@ -136,7 +143,7 @@ function TrackRow({
         <button className={`icon-button ${track.capabilities.download ? '' : 'is-unavailable'}`} aria-disabled={!track.capabilities.download} aria-label={track.capabilities.download ? `下载 ${track.title}` : `下载不可用：${track.title}`} title={track.capabilities.download ? '下载' : '来源未授权下载，点击了解详情'} onClick={onDownload}><Download /></button>
         <a className="icon-button" href={track.sourceUrl} target="_blank" rel="noreferrer" aria-label={`在 ${sourceLabel(track.source)} 打开 ${track.title}`} title="在来源中打开"><ExternalLink /></a>
         <button aria-label={`${liked ? '取消收藏' : '收藏'} ${track.title}`} className={`like-button ${liked ? 'liked' : ''}`} onClick={onLike}><Heart fill={liked ? 'currentColor' : 'none'} /></button>
-        {onRemove && <button className="icon-button danger" aria-label={`从歌单移除 ${track.title}`} title="从歌单移除" onClick={onRemove}><Trash2 /></button>}
+        {onRemove && <button className="icon-button danger track-row__remove" aria-label={`移除 ${track.title}`} title="移除" onClick={onRemove}><Trash2 /></button>}
       </div>
     </div>
   )
@@ -148,6 +155,7 @@ function App() {
   const [results, setResults] = useState<Track[]>(initialTracks)
   const [resultQuery, setResultQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
+  const [searchDegraded, setSearchDegraded] = useState(false)
   const [sourceFilter, setSourceFilter] = useState<'all' | MusicSource>('all')
   const [queue, setQueue] = useState<Track[]>(() => playableTracks(readStoredTracks('listener.queue', initialTracks.slice(0, 6), true)))
   const [current, setCurrent] = useState<Track>(() => readStoredTrack('listener.current', initialTracks[0]))
@@ -180,7 +188,9 @@ function App() {
   })
   const [identifySource, setIdentifySource] = useState<MusicSource>('netease')
   const [identification, setIdentification] = useState<MusicIdentification | null>(null)
+  const [identificationHasDetails, setIdentificationHasDetails] = useState<boolean | null>(null)
   const [isIdentifying, setIsIdentifying] = useState(false)
+  const [providerChecking, setProviderChecking] = useState(true)
   const [providerStatus, setProviderStatus] = useState<ProviderStatus>({
     online: false,
     sources: ['demo'],
@@ -190,6 +200,7 @@ function App() {
   const [pendingTrackKey, setPendingTrackKey] = useState<string | null>(null)
   const pendingTrackKeyRef = useRef<string | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
+  const resolveControllerRef = useRef<AbortController | null>(null)
   const playRequestRef = useRef(0)
   const queueRevisionRef = useRef(0)
   const searchRequestRef = useRef(0)
@@ -212,10 +223,43 @@ function App() {
     noticeTimerRef.current = window.setTimeout(() => setNotice(''), 1800)
   }
 
+  const attemptPlayback = (audio: HTMLAudioElement) => {
+    void audio.play().catch((error: unknown) => {
+      if (audioRef.current !== audio) return
+      setIsPlaying(false)
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      showNotice(error instanceof DOMException && error.name === 'NotAllowedError'
+        ? '播放被浏览器拦截，请再次点击播放'
+        : '音频无法开始播放，请稍后重试')
+    })
+  }
+
+  const isCurrentAudio = (audio: HTMLAudioElement) => audioRef.current === audio
+
+  const focusAfterRemoval = (
+    button: HTMLButtonElement,
+    containerSelector: string,
+    itemSelector: string,
+    fallbackSelector: string,
+  ) => {
+    const container = button.closest(containerSelector)
+    const removedIndex = container
+      ? [...container.querySelectorAll<HTMLButtonElement>(itemSelector)].indexOf(button)
+      : -1
+    window.setTimeout(() => {
+      const remaining = [...document.querySelectorAll<HTMLButtonElement>(`${containerSelector} ${itemSelector}`)]
+      const nextIndex = removalFocusIndex(removedIndex, remaining.length)
+      const target = nextIndex >= 0 ? remaining[nextIndex] : document.querySelector<HTMLElement>(fallbackSelector)
+      target?.focus()
+    }, 0)
+  }
+
   const updateQuery = (value: string) => {
     identifyRequestRef.current += 1
     setIsIdentifying(false)
     setIdentification(null)
+    setIdentificationHasDetails(null)
+    setSearchDegraded(false)
     setQuery(value)
   }
 
@@ -223,6 +267,7 @@ function App() {
     identifyRequestRef.current += 1
     setIsIdentifying(false)
     setIdentification(null)
+    setIdentificationHasDetails(null)
     setIdentifySource(source)
   }
 
@@ -265,14 +310,17 @@ function App() {
   }, [current])
 
   useEffect(() => () => {
+    playRequestRef.current += 1
+    resolveControllerRef.current?.abort()
     for (const { url } of localFilesRef.current.values()) URL.revokeObjectURL(url)
   }, [])
 
   useEffect(() => {
     let active = true
-    void musicProvider.status().then((status) => {
-      if (active) setProviderStatus(status)
-    })
+    void musicProvider.status()
+      .then((status) => { if (active) setProviderStatus(status) })
+      .catch(() => undefined)
+      .finally(() => { if (active) setProviderChecking(false) })
     return () => {
       active = false
       if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
@@ -332,8 +380,9 @@ function App() {
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
+    audio.volume = volume
     audio.load()
-    if (isPlaying) void audio.play().catch(() => setIsPlaying(false))
+    if (isPlaying) attemptPlayback(audio)
   }, [current]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -341,6 +390,7 @@ function App() {
     const controller = new AbortController()
     const requestId = ++searchRequestRef.current
     const trimmed = query.trim()
+    setSearchDegraded(false)
     if (!trimmed) {
       setResults(initialTracks)
       setResultQuery('')
@@ -360,8 +410,12 @@ function App() {
       try {
         const found = await musicProvider.search(query, controller.signal)
         if (active && requestId === searchRequestRef.current) setResults(found)
-      } catch {
-        // A superseded search is expected to abort.
+      } catch (error) {
+        const fallback = searchFallbackTracks<Track>(error)
+        if (fallback && active && requestId === searchRequestRef.current) {
+          setResults(fallback)
+          setSearchDegraded(true)
+        }
       } finally {
         if (active && requestId === searchRequestRef.current) setIsSearching(false)
       }
@@ -396,6 +450,8 @@ function App() {
 
   const cancelPendingPlay = () => {
     playRequestRef.current += 1
+    resolveControllerRef.current?.abort()
+    resolveControllerRef.current = null
     pendingTrackKeyRef.current = null
     setPendingTrackKey(null)
   }
@@ -422,7 +478,7 @@ function App() {
       const audio = audioRef.current
       if (!audio) return
       if (mode === 'toggle' && !audio.paused) audio.pause()
-      else if (audio.paused) void audio.play().catch(() => showNotice('浏览器暂时无法开始播放'))
+      else if (audio.paused) attemptPlayback(audio)
       return
     }
     setCurrent(track)
@@ -434,6 +490,8 @@ function App() {
   const resolveAndPlay = async (track: Track, list?: Track[], mode: PlayMode = 'toggle') => {
     const target = preferResolvedCurrent(track, current)
     if (target.capabilities.playback === 'none') return showNotice('该来源没有可用音源')
+    resolveControllerRef.current?.abort()
+    resolveControllerRef.current = null
     const requestId = ++playRequestRef.current
     const key = trackKey(target)
     if (target.audioUrl) {
@@ -444,20 +502,23 @@ function App() {
       return
     }
     const queueRevision = queueRevisionRef.current
+    const controller = new AbortController()
+    resolveControllerRef.current = controller
     pendingTrackKeyRef.current = key
     setPendingTrackKey(key)
     try {
-      const resolvedUrl = await musicProvider.resolve(target)
+      const resolvedUrl = await musicProvider.resolve(target, controller.signal)
       if (requestId !== playRequestRef.current) return
       const resolvedTrack = { ...target, audioUrl: resolvedUrl }
       setLiked((previous) => previous.has(key) ? new Map(previous).set(key, resolvedTrack) : previous)
       playTrack(resolvedTrack, queueRevision === queueRevisionRef.current ? list : undefined, mode)
     } catch (error) {
-      if (requestId === playRequestRef.current) {
+      if (requestId === playRequestRef.current && !controller.signal.aborted) {
         const restricted = error instanceof Error && 'code' in error && error.code === 'CAPABILITY_UNAVAILABLE'
         showNotice(restricted ? '该歌曲当前不允许公开播放' : '这首歌暂时没有可用音源')
       }
     } finally {
+      if (resolveControllerRef.current === controller) resolveControllerRef.current = null
       if (requestId === playRequestRef.current) {
         pendingTrackKeyRef.current = null
         setPendingTrackKey(null)
@@ -478,7 +539,7 @@ function App() {
       void resolveAndPlay(current, undefined, 'play')
       return
     }
-    void audio.play().catch(() => showNotice('浏览器暂时无法开始播放'))
+    attemptPlayback(audio)
   }
 
   const togglePlay = () => {
@@ -518,22 +579,19 @@ function App() {
   }
 
   const handleEnded = () => {
-    if (!queue.length || currentIndex < 0) {
-      setIsPlaying(false)
-      return
+    const action = endedPlaybackAction({
+      pending: Boolean(pendingTrackKeyRef.current),
+      queueLength: queue.length,
+      currentIndex,
+      repeatMode,
+    })
+    setIsPlaying(false)
+    if (action === 'restart' && audioRef.current) {
+      audioRef.current.currentTime = 0
+      attemptPlayback(audioRef.current)
+    } else if (action === 'next') {
+      skip(1)
     }
-    if (repeatMode === 'one') {
-      if (audioRef.current) {
-        audioRef.current.currentTime = 0
-        void audioRef.current.play().catch(() => setIsPlaying(false))
-      }
-      return
-    }
-    if (repeatMode === 'off' && currentIndex === queue.length - 1) {
-      setIsPlaying(false)
-      return
-    }
-    skip(1)
   }
 
   const toggleLike = (track: Track) => {
@@ -618,6 +676,7 @@ function App() {
     setSelectedPlaylistId(null)
     setPendingDeletePlaylistId(null)
     showNotice('歌单已删除')
+    window.setTimeout(() => playlistsHeadingRef.current?.focus(), 0)
   }
 
   const openLyrics = async (track: Track) => {
@@ -736,6 +795,7 @@ function App() {
     setIsSearching(false)
     setIsIdentifying(true)
     setIdentification(null)
+    setIdentificationHasDetails(null)
     try {
       const match = await musicProvider.identify(input, /^https?:\/\//i.test(input) ? undefined : identifySource)
       if (requestId !== identifyRequestRef.current) return
@@ -747,9 +807,13 @@ function App() {
         setResults([track])
         setResultQuery(input)
         setSourceFilter('all')
+        setIdentificationHasDetails(true)
         showNotice('已获取歌曲信息')
       } catch {
-        if (requestId === identifyRequestRef.current) showNotice('已识别 ID；该来源尚未接入详情接口')
+        if (requestId === identifyRequestRef.current) {
+          setIdentificationHasDetails(false)
+          showNotice('已识别 ID；该来源尚未接入详情接口')
+        }
       }
     } catch {
       if (requestId === identifyRequestRef.current) showNotice('解析服务暂时不可用')
@@ -888,7 +952,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${mobileNavOpen ? 'sidebar--open' : ''}`} aria-label="侧边导航" {...(queueOpen || dialogOpen ? { inert: '' } : {})}>
+      <aside id="mobile-navigation" className={`sidebar ${mobileNavOpen ? 'sidebar--open' : ''}`} aria-label="侧边导航" {...(queueOpen || dialogOpen ? { inert: '' } : {})}>
         <button className="sidebar__close icon-button" onClick={closeMobileNav} aria-label="关闭菜单"><X /></button>
         <button className="brand" onClick={() => navigate('discover')}>
           <span className="brand__symbol"><Waves /></span>
@@ -909,9 +973,9 @@ function App() {
         </nav>
 
         <div className="source-card">
-          <span><Sparkles /> {providerStatus.online ? `${providerStatus.sources.length} 个音乐源已接入` : '演示模式'}</span>
-          <p>{providerStatus.online ? providerStatus.sources.map(sourceLabel).join(' · ') : '聚合服务暂时离线'}</p>
-          <div className={`source-card__dots ${providerStatus.online ? '' : 'offline'}`}><i /></div>
+          <span><Sparkles /> {providerChecking ? '正在连接音乐源' : providerStatus.online ? `${providerStatus.sources.length} 个音乐源已接入` : '演示模式'}</span>
+          <p>{providerChecking ? '正在检查聚合服务…' : providerStatus.online ? providerStatus.sources.map(sourceLabel).join(' · ') : '聚合服务暂时离线'}</p>
+          <div className={`source-card__dots ${providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`}><i /></div>
         </div>
       </aside>
 
@@ -919,14 +983,14 @@ function App() {
 
       <main className="main-content" {...(queueOpen || mobileNavOpen || dialogOpen ? { inert: '' } : {})}>
         <header className="topbar">
-          <button ref={mobileMenuRef} className="mobile-menu icon-button" onClick={openMobileNav} aria-label="打开菜单"><Menu /></button>
+          <button ref={mobileMenuRef} className="mobile-menu icon-button" onClick={openMobileNav} aria-label="打开菜单" aria-controls="mobile-navigation" aria-expanded={mobileNavOpen}><Menu /></button>
           <button className="search-box" onClick={() => navigate('search')}>
             <Search />
             <span>搜索歌曲、歌手或专辑</span>
             <kbd>⌘/Ctrl K</kbd>
           </button>
           <div className="topbar__actions">
-            <div className="source-selector"><span className={`status-dot ${providerStatus.online ? '' : 'offline'}`} />{providerStatus.online ? '聚合服务在线' : '演示模式'}</div>
+            <div className="source-selector"><span className={`status-dot ${providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`} />{providerChecking ? '正在连接' : providerStatus.online ? '聚合服务在线' : '演示模式'}</div>
             <div className="avatar" aria-hidden="true">L</div>
           </div>
         </header>
@@ -1018,16 +1082,16 @@ function App() {
                   {musicSources.filter((source) => source !== 'demo' && source !== 'local').map((source) => <option key={source} value={source}>{sourceLabel(source)}</option>)}
                 </select>
                 <button className="primary-button" disabled={isIdentifying} onClick={() => void identifyInput()}>{isIdentifying ? '正在识别…' : '解析地址 / ID'}</button>
-                <span>粘贴平台地址时会自动识别；纯 ID 请先选择平台。</span>
+                <span>平台地址与纯 ID 均需点击解析；纯 ID 请先选择平台。</span>
               </div>
               {identification && (
                 <div className="identification" role="status">
                   <div><SourceBadge track={{ ...initialTracks[0], source: identification.source }} /><strong>{identification.id}</strong></div>
-                  <span>{providerStatus.sources.includes(identification.source) ? '来源已连接' : '已识别，详情接口待授权接入'}</span>
+                  <span>{identificationHasDetails === true ? '歌曲详情已获取' : identificationHasDetails === false ? '已识别，详情接口不可用' : '已识别，正在获取歌曲详情…'}</span>
                   <a href={identification.canonicalUrl} target="_blank" rel="noreferrer">在来源中打开 <ExternalLink /></a>
                 </div>
               )}
-              <div className="source-filters" aria-label="音乐源筛选">
+              <div className="source-filters" role="group" aria-label="音乐源筛选">
                 <button aria-pressed={sourceFilter === 'all'} className={sourceFilter === 'all' ? 'active' : ''} onClick={() => setSourceFilter('all')}>全部来源</button>
                 {resultSources.map((source) => (
                   <button key={source} aria-pressed={sourceFilter === source} className={sourceFilter === source ? 'active' : ''} onClick={() => setSourceFilter(source)}>{sourceLabel(source)}</button>
@@ -1035,7 +1099,8 @@ function App() {
               </div>
             </div>
             <section className="results-section">
-              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : `共 ${displayResults.length} 首`}</span></div>
+              {searchDegraded && <div className="search-warning" role="alert"><Sparkles /><span><strong>聚合服务异常，当前为演示结果</strong><small>真实音乐源暂时不可用，请稍后重试。</small></span></div>}
+              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : searchDegraded ? `演示结果 ${displayResults.length} 首` : `共 ${displayResults.length} 首`}</span></div>
               <div className="track-list" role="list">
                 {displayResults.length ? displayResults.map((track, index) => (
                   <TrackRow
@@ -1052,7 +1117,7 @@ function App() {
                     onLyrics={() => void openLyrics(track)}
                     onDownload={() => void downloadTrack(track)}
                   />
-                )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
+                )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : searchDegraded ? '聚合服务暂不可用' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : searchDegraded ? '演示曲库里也没有匹配结果，请稍后重试真实搜索。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
               </div>
             </section>
           </div>
@@ -1069,7 +1134,7 @@ function App() {
               </div>
             </div>
             {localTracks.length > 0 && (
-              <section className="library-section">
+              <section id="local-tracks" className="library-section">
                 <div className="section-heading"><div><span className="section-index">{String(localTracks.length).padStart(2, '0')}</span><h2>本地音乐</h2></div><span className="searching-state">仅保留在当前会话</span></div>
                 <div className="track-list" role="list">
                   {localTracks.map((track, index) => (
@@ -1083,14 +1148,17 @@ function App() {
                       onPlaylist={() => openPlaylistDialog(track)}
                       onLyrics={() => void openLyrics(track)}
                       onDownload={() => void downloadTrack(track)}
-                      onRemove={() => removeLocalTrack(track)}
+                      onRemove={(event) => {
+                        focusAfterRemoval(event.currentTarget, '#local-tracks', '.track-row__remove', '#playlists-heading')
+                        removeLocalTrack(track)
+                      }}
                     />
                   ))}
                 </div>
               </section>
             )}
             <section className="library-section">
-              <div className="section-heading"><div><span className="section-index">01</span><h2 ref={playlistsHeadingRef} tabIndex={-1}>我的歌单</h2></div></div>
+              <div className="section-heading"><div><span className="section-index">01</span><h2 id="playlists-heading" ref={playlistsHeadingRef} tabIndex={-1}>我的歌单</h2></div></div>
               {userPlaylists.length ? (
                 <div className="playlist-grid playlist-grid--user">
                   {userPlaylists.map((playlist, index) => (
@@ -1106,7 +1174,7 @@ function App() {
             {selectedPlaylist && (
               <section id="selected-playlist-detail" className="library-section playlist-detail" aria-labelledby="selected-playlist-title">
                 <div className="section-heading">
-                  <div><span className="section-index">{String(selectedPlaylist.tracks.length).padStart(2, '0')}</span><h2 id="selected-playlist-title">{selectedPlaylist.title}</h2></div>
+                  <div><span className="section-index">{String(selectedPlaylist.tracks.length).padStart(2, '0')}</span><h2 id="selected-playlist-title" tabIndex={-1}>{selectedPlaylist.title}</h2></div>
                   <div className="section-actions">
                     <button disabled={!selectedPlaylist.tracks.length} onClick={() => openPlaylist(selectedPlaylist)}><Play />播放全部</button>
                     <button className="danger" onClick={() => deletePlaylist(selectedPlaylist.id)}><Trash2 />{pendingDeletePlaylistId === selectedPlaylist.id ? '确认删除' : '删除歌单'}</button>
@@ -1124,7 +1192,10 @@ function App() {
                       onPlaylist={() => openPlaylistDialog(track)}
                       onLyrics={() => void openLyrics(track)}
                       onDownload={() => void downloadTrack(track)}
-                      onRemove={() => removeTrackFromPlaylist(selectedPlaylist.id, track)}
+                      onRemove={(event) => {
+                        focusAfterRemoval(event.currentTarget, '#selected-playlist-detail', '.track-row__remove', '#selected-playlist-title')
+                        removeTrackFromPlaylist(selectedPlaylist.id, track)
+                      }}
                     />
                   ))}
                   {!selectedPlaylist.tracks.length && <div className="compact-empty"><ListMusic /><span>歌单还是空的</span><button onClick={() => navigate('search')}>去搜索音乐</button></div>}
@@ -1164,7 +1235,10 @@ function App() {
                 const isCurrent = trackKey(track) === currentKey
                 return <div className={`queue-item ${isCurrent ? 'current' : ''}`} key={`${trackKey(track)}-${index}`}>
                   <button className="queue-item__main" aria-current={isCurrent ? 'true' : undefined} onClick={() => void resolveAndPlay(track, undefined, 'play')}><Cover name={track.cover} size="small" /><span><strong>{track.title}</strong><small>{track.artist}</small></span>{isCurrent && <i><Waves /></i>}</button>
-                  <button className="icon-button" aria-label={`从队列移除 ${track.title}`} onClick={() => removeFromQueue(track)}><X /></button>
+                  <button className="icon-button queue-item__remove" aria-label={`从队列移除 ${track.title}`} onClick={(event) => {
+                    focusAfterRemoval(event.currentTarget, '.queue-drawer__list', '.queue-item__remove', '.queue-drawer__header .icon-button')
+                    removeFromQueue(track)
+                  }}><X /></button>
                 </div>
               })}
               {!queue.length && <div className="compact-empty"><ListMusic /><span>播放队列为空</span></div>}
@@ -1180,12 +1254,12 @@ function App() {
             <div className="dialog__header"><div><span className="eyebrow">MY PLAYLISTS</span><h2 id="playlist-dialog-title">{playlistModalTrack ? '加入歌单' : '新建歌单'}</h2></div><button className="icon-button" aria-label="关闭" onClick={closeDialog}><X /></button></div>
             {playlistModalTrack && userPlaylists.length > 0 && (
               <div className="dialog__choices">
-                {userPlaylists.map((playlist) => <button key={playlist.id} onClick={() => addTrackToPlaylist(playlist.id, playlistModalTrack)}><Cover name={playlist.cover} size="small" /><span><strong>{playlist.title}</strong><small>{playlist.tracks.length} 首</small></span><Plus /></button>)}
+                {userPlaylists.map((playlist, index) => <button key={playlist.id} autoFocus={index === 0} onClick={() => addTrackToPlaylist(playlist.id, playlistModalTrack)}><Cover name={playlist.cover} size="small" /><span><strong>{playlist.title}</strong><small>{playlist.tracks.length} 首</small></span><Plus /></button>)}
               </div>
             )}
             <form className="dialog__form" onSubmit={createPlaylist}>
               <label htmlFor="playlist-name">{playlistModalTrack ? '或创建新歌单' : '歌单名称'}</label>
-              <input id="playlist-name" autoFocus maxLength={40} value={playlistName} onChange={(event) => setPlaylistName(event.target.value)} placeholder="例如：深夜循环" />
+              <input id="playlist-name" autoFocus={!playlistModalTrack || userPlaylists.length === 0} maxLength={40} value={playlistName} onChange={(event) => setPlaylistName(event.target.value)} placeholder="例如：深夜循环" />
               <button className="primary-button" type="submit"><Plus />{playlistModalTrack ? '创建并加入' : '创建歌单'}</button>
             </form>
           </section>
@@ -1197,7 +1271,8 @@ function App() {
         <>
           <section className="dialog dialog--lyrics" role="dialog" aria-modal="true" aria-labelledby="lyrics-dialog-title">
             <div className="dialog__header"><div><span className="eyebrow">LYRICS</span><h2 id="lyrics-dialog-title">{lyricsTrack.title}</h2><p>{lyricsTrack.artist}</p></div><button className="icon-button" aria-label="关闭歌词" autoFocus onClick={closeDialog}><X /></button></div>
-            <pre className="lyrics-content" aria-live="polite">{lyricsLoading ? '正在加载歌词…' : lyricsText}</pre>
+            <span className="visually-hidden" role="status" aria-live="polite">{lyricsLoading ? '正在加载歌词' : '歌词已加载'}</span>
+            <pre className="lyrics-content">{lyricsLoading ? '正在加载歌词…' : lyricsText}</pre>
           </section>
           <button className="dialog-scrim" onClick={closeDialog} aria-label="关闭歌词" />
         </>
@@ -1205,29 +1280,30 @@ function App() {
 
       <footer className="player" {...(queueOpen || mobileNavOpen || dialogOpen ? { inert: '' } : {})}>
         <audio
+          key={mediaLoadKey(current)}
           ref={audioRef}
           src={current.audioUrl || undefined}
           preload="metadata"
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
+          onPlay={(event) => { if (isCurrentAudio(event.currentTarget)) setIsPlaying(true) }}
+          onPause={(event) => { if (isCurrentAudio(event.currentTarget)) setIsPlaying(false) }}
           onTimeUpdate={(event) => {
-            if (Number.isFinite(event.currentTarget.currentTime)) setProgress(event.currentTarget.currentTime)
+            if (isCurrentAudio(event.currentTarget) && Number.isFinite(event.currentTarget.currentTime)) setProgress(event.currentTarget.currentTime)
           }}
           onLoadedMetadata={(event) => {
-            if (event.currentTarget.currentSrc === current.audioUrl && Number.isFinite(event.currentTarget.duration)) {
+            if (isCurrentAudio(event.currentTarget) && Number.isFinite(event.currentTarget.duration)) {
               setDuration(event.currentTarget.duration)
               updateLocalDuration(event.currentTarget.duration)
             }
           }}
-          onEnded={handleEnded}
-          onError={handleAudioError}
+          onEnded={(event) => { if (isCurrentAudio(event.currentTarget)) handleEnded() }}
+          onError={(event) => { if (isCurrentAudio(event.currentTarget)) handleAudioError() }}
         />
         <div className="player__track"><Cover name={current.cover} size="small" /><div><strong>{current.title}</strong><span>{current.artist} · {sourceLabel(current.source)} · {qualityLabels[current.quality]}{current.capabilities.playback === 'preview' ? '试听' : ''}</span></div><button aria-label={`${liked.has(currentKey) ? '取消收藏' : '收藏'} ${current.title}`} className={`like-button ${liked.has(currentKey) ? 'liked' : ''}`} onClick={() => toggleLike(current)}><Heart fill={liked.has(currentKey) ? 'currentColor' : 'none'} /></button></div>
         <div className="player__center">
           <div className="player__controls"><button aria-label="随机播放" disabled={queue.length < 2} onClick={shuffle}><Shuffle /></button><button aria-label="上一首" disabled={!queue.length} onClick={() => skip(-1)}><SkipBack fill="currentColor" /></button><button className="play-main" aria-label={current.capabilities.playback === 'none' ? '当前歌曲无法播放' : pendingTrackKey ? '取消加载' : isPlaying ? '暂停' : '播放'} aria-busy={Boolean(pendingTrackKey)} disabled={current.capabilities.playback === 'none'} onClick={togglePlay}>{pendingTrackKey ? <LoaderCircle className="spin" /> : isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button><button aria-label="下一首" disabled={!queue.length} onClick={() => skip(1)}><SkipForward fill="currentColor" /></button><button className={repeatMode === 'off' ? '' : 'active'} aria-label={`循环模式：${repeatMode === 'off' ? '关闭' : repeatMode === 'all' ? '列表循环' : '单曲循环'}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeat}>{repeatMode === 'one' ? <Repeat1 /> : <Repeat />}</button><button aria-label="播放队列" onClick={openQueue}><ListMusic /></button></div>
           <div className="player__progress"><span>{formatTime(seekProgress)}</span><input aria-label="播放进度" aria-valuetext={`${formatTime(seekProgress)} / ${formatTime(seekDuration)}`} disabled={!seekDuration} type="range" min="0" max={seekDuration || 1} step="0.1" value={seekProgress} style={{ '--progress': `${seekDuration ? (seekProgress / seekDuration) * 100 : 0}%` } as React.CSSProperties} onChange={(event) => seekTo(Number(event.target.value))} /><span>{formatTime(seekDuration)}</span></div>
         </div>
-        <div className="player__tools"><button aria-label={`将 ${current.title} 加入歌单`} onClick={() => openPlaylistDialog(current)}><ListPlus /></button><button className={current.capabilities.lyrics ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.lyrics} aria-label={current.capabilities.lyrics ? `查看 ${current.title} 的歌词` : `${current.title} 的歌词不可用`} onClick={() => void openLyrics(current)}><FileText /></button><button className={current.capabilities.download ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.download} aria-label={current.capabilities.download ? `下载 ${current.title}` : `${current.title} 不可下载`} onClick={() => void downloadTrack(current)}><Download /></button><button aria-label="播放队列" onClick={openQueue}><ListMusic /></button><button aria-label={volume > 0 ? '静音' : '取消静音'} aria-pressed={volume === 0} onClick={toggleMute}>{volume > 0 ? <Volume2 /> : <VolumeX />}</button><input aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} type="range" min="0" max="1" step="0.01" value={volume} style={{ '--progress': `${volume * 100}%` } as React.CSSProperties} onChange={(event) => setVolume(Number(event.target.value))} /></div>
+        <div className="player__tools"><button aria-label={`将 ${current.title} 加入歌单`} onClick={() => openPlaylistDialog(current)}><ListPlus /></button><button className={current.capabilities.lyrics ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.lyrics} aria-label={current.capabilities.lyrics ? `查看 ${current.title} 的歌词` : `${current.title} 的歌词不可用`} onClick={() => void openLyrics(current)}><FileText /></button><button className={current.capabilities.download ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.download} aria-label={current.capabilities.download ? `下载 ${current.title}` : `${current.title} 不可下载`} onClick={() => void downloadTrack(current)}><Download /></button><button className="volume-button" aria-label={volume > 0 ? '静音' : '取消静音'} aria-pressed={volume === 0} onClick={toggleMute}>{volume > 0 ? <Volume2 /> : <VolumeX />}</button><input aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} type="range" min="0" max="1" step="0.01" value={volume} style={{ '--progress': `${volume * 100}%` } as React.CSSProperties} onChange={(event) => setVolume(Number(event.target.value))} /></div>
       </footer>
       {notice && <div className="notice" role="status">{notice}</div>}
     </div>

@@ -2,7 +2,7 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、本地音乐、播放队列和按来源授权的歌词与下载能力。
 
-当前版本：`0.4.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.4.1`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
@@ -45,7 +45,7 @@ npm run build
 - `GET /api/lyrics?source=来源&id=歌曲ID` → Provider 授权的歌词
 - `GET /api/download?source=来源&id=歌曲ID` → Provider 授权的下载描述
 
-接口不可用时会自动回退到演示数据，方便前后端独立开发。
+接口不可用时会自动回退到演示数据并明确显示服务异常，方便前后端独立开发且不会将故障伪装成零结果。
 
 服务端默认限制每个客户端每分钟 60 次请求，搜索结果缓存 30 秒，并对同来源重复记录去重。可用环境变量：`HOST`、`PORT`、`CORS_ORIGIN`、`APPLE_COUNTRY`、`APPLE_SEARCH_URL`、`APPLE_LOOKUP_URL`、`MUSICBRAINZ_CONTACT`、`AUDIUS_API_KEY`、`ENABLE_NETEASE`、`NETEASE_SEARCH_URL`、`NETEASE_MEDIA_URL`。
 

@@ -137,12 +137,22 @@ export const createMusicService = ({
         )),
       )
       if (controller.signal.aborted) throw abortReason(controller.signal)
+      let hasProviderFailure = false
       const providerTracks = results.flatMap((result, index) => {
-        if (result.status !== 'fulfilled' || !Array.isArray(result.value)) return []
+        if (result.status !== 'fulfilled' || !Array.isArray(result.value)) {
+          hasProviderFailure = true
+          return []
+        }
         const valid = result.value.filter((track) => isTrack(track) && track.source === providers[index].id)
-        return result.value.length === 0 || valid.length ? [valid] : []
+        if (result.value.length && !valid.length) {
+          hasProviderFailure = true
+          return []
+        }
+        return [valid]
       })
-      if (!providerTracks.length) throw new Error('all music providers failed')
+      if (!providerTracks.length || (hasProviderFailure && providerTracks.every((tracks) => !tracks.length))) {
+        throw new Error('all music providers failed')
+      }
 
       const seen = new Set()
       const tracks = []
@@ -178,12 +188,12 @@ export const createMusicService = ({
     return subscribe(key, entry, signal)
   }
 
-  const resolve = async (source, id) => {
+  const resolve = async (source, id, signal) => {
     const provider = getProvider(providerById, source)
     if (typeof provider.resolve !== 'function' || provider.capabilities?.playback === false) {
       throw new Error('playback is unavailable for this source')
     }
-    return withTimeout((signal) => provider.resolve(id, signal), providerTimeoutMs)
+    return withTimeout((providerSignal) => provider.resolve(id, providerSignal), providerTimeoutMs, signal)
   }
 
   const lyrics = async (source, id) => {

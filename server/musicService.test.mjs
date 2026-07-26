@@ -150,6 +150,28 @@ test('fails when every provider fails so the frontend can use its fallback', asy
   await assert.rejects(() => service.search('song', 20), /all music providers failed/)
 })
 
+test('fails when an empty aggregate includes a provider outage', async () => {
+  const service = createMusicService({
+    providers: [
+      { id: 'empty', search: async () => [] },
+      { id: 'offline', search: async () => { throw new Error('upstream unavailable') } },
+    ],
+  })
+
+  await assert.rejects(() => service.search('song', 20), /all music providers failed/)
+})
+
+test('fails when an empty aggregate includes an invalid provider response', async () => {
+  const service = createMusicService({
+    providers: [
+      { id: 'empty', search: async () => [] },
+      { id: 'invalid', search: async () => null },
+    ],
+  })
+
+  await assert.rejects(() => service.search('song', 20), /all music providers failed/)
+})
+
 test('resolves tracks through the requested provider', async () => {
   const service = createMusicService({
     providers: [{ id: 'netease', search: async () => [], resolve: async (id) => `https://audio.example/${id}` }],
@@ -158,6 +180,44 @@ test('resolves tracks through the requested provider', async () => {
   assert.equal(await service.resolve('netease', '42'), 'https://audio.example/42')
   assert.deepEqual(service.sources, ['netease'])
   await assert.rejects(() => service.resolve('qq', '42'), /unknown music source/)
+})
+
+test('immediately cancels resolve providers whether they observe or ignore aborts', async () => {
+  const signals = []
+  const never = (_id, signal) => {
+    signals.push(signal)
+    return new Promise(() => {})
+  }
+  const observesAbort = (_id, signal) => {
+    signals.push(signal)
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    })
+  }
+  const service = createMusicService({
+    providerTimeoutMs: 1_000,
+    providers: [
+      { id: 'ignores', search: async () => [], resolve: never },
+      { id: 'observes', search: async () => [], resolve: observesAbort },
+    ],
+  })
+
+  for (const source of ['ignores', 'observes']) {
+    const controller = new AbortController()
+    const pending = service.resolve(source, '42', controller.signal)
+    await new Promise((resolve) => setImmediate(resolve))
+    controller.abort(new Error(`${source} cancelled`))
+    await assert.rejects(
+      () => Promise.race([
+        pending,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('test guard expired')), 50)),
+      ]),
+      new RegExp(`${source} cancelled`),
+    )
+  }
+
+  assert.equal(signals.length, 2)
+  assert.equal(signals.every((signal) => signal.aborted), true)
 })
 
 test('bounds slow providers and still returns results from healthy sources', async () => {

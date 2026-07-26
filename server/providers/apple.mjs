@@ -33,7 +33,7 @@ export const createAppleProvider = ({
 } = {}) => {
   const request = async (url, signal) => {
     const response = await fetchImpl(url, {
-      headers: { Accept: 'application/json', 'User-Agent': 'Listener/0.4.0 (+music metadata search)' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Listener/0.4.1 (+music metadata search)' },
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     })
     if (!response.ok) throw new Error(`Apple music request failed: ${response.status}`)

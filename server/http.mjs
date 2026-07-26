@@ -95,7 +95,21 @@ export const createApiHandler = ({
         if (!source || !id) {
           return writeJson(response, 400, errorPayload('INVALID_TRACK', 'source and id are required'), corsHeaders)
         }
-        return writeJson(response, 200, { url: await service.resolve(source, id) }, corsHeaders)
+        const controller = new AbortController()
+        const abortResolve = () => controller.abort(new Error('resolve client disconnected'))
+        const handleResponseClose = () => {
+          if (!response.writableEnded) abortResolve()
+        }
+        request.once('aborted', abortResolve)
+        response.once('close', handleResponseClose)
+        try {
+          const audioUrl = await service.resolve(source, id, controller.signal)
+          if (controller.signal.aborted || response.destroyed) return
+          return writeJson(response, 200, { url: audioUrl }, corsHeaders)
+        } finally {
+          request.removeListener('aborted', abortResolve)
+          response.removeListener('close', handleResponseClose)
+        }
       }
       if (url.pathname === '/api/identify') {
         const input = url.searchParams.get('input')?.trim()

@@ -95,6 +95,35 @@ test('aborts a search subscription when its client disconnects', async () => {
   })
 })
 
+test('aborts a resolve subscription when its client disconnects', async () => {
+  let markStarted
+  let markAborted
+  let release
+  const started = new Promise((resolve) => { markStarted = resolve })
+  const aborted = new Promise((resolve) => { markAborted = resolve })
+  const service = {
+    async resolve(_source, _id, signal) {
+      markStarted()
+      signal?.addEventListener('abort', markAborted, { once: true })
+      return new Promise((resolve) => { release = resolve })
+    },
+  }
+
+  await withServer(createApiHandler({ service }), async (baseUrl) => {
+    const client = requestHttp(`${baseUrl}/api/resolve?source=netease&id=1`)
+    client.on('error', () => {})
+    client.end()
+    await started
+    client.destroy()
+    const wasAborted = await Promise.race([
+      aborted.then(() => true),
+      new Promise((resolve) => setTimeout(() => resolve(false), 20)),
+    ])
+    release('https://audio.example/1')
+    assert.equal(wasAborted, true)
+  })
+})
+
 test('validates requests and returns JSON errors', async () => {
   const service = { search: async () => [], resolve: async () => '', identify: () => null }
 

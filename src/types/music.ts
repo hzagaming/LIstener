@@ -48,7 +48,7 @@ export interface MusicProvider {
   id: MusicSource
   name: string
   search(query: string, signal?: AbortSignal): Promise<Track[]>
-  resolve(track: Track): Promise<string>
+  resolve(track: Track, signal?: AbortSignal): Promise<string>
   identify(input: string, source?: MusicSource): Promise<MusicIdentification | null>
   lookup(match: MusicIdentification): Promise<Track>
   lyrics(track: Track): Promise<Lyrics>

@@ -69,7 +69,7 @@ export const createMusicBrainzProvider = ({
       const response = await fetchImpl(url, {
         headers: {
           Accept: 'application/json',
-          'User-Agent': `Listener/0.4.0 (${normalizedContact})`,
+          'User-Agent': `Listener/0.4.1 (${normalizedContact})`,
         },
         redirect: 'error',
         signal: requestSignal,

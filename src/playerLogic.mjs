@@ -32,3 +32,7 @@ export const seekPosition = (value, duration) => (
     ? Math.min(duration, Math.max(0, value))
     : null
 )
+
+export const initialPlaybackDuration = (track) => (
+  track.capabilities.playback === 'full' ? track.duration : 0
+)

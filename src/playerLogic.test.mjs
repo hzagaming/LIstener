@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  endedPlaybackAction, mediaLoadKey, playableTracks, playbackVisualState, preferResolvedCurrent,
-  removalFocusIndex, seekPosition,
+  endedPlaybackAction, initialPlaybackDuration, mediaLoadKey, playableTracks, playbackVisualState,
+  preferResolvedCurrent, removalFocusIndex, seekPosition,
 } from './playerLogic.mjs'
 
 const track = (id, playback = 'full', audioUrl = '') => ({
@@ -64,4 +64,10 @@ test('clamps media session seek positions to a playable range', () => {
   assert.equal(seekPosition(140, 120), 120)
   assert.equal(seekPosition(Number.NaN, 120), null)
   assert.equal(seekPosition(10, 0), null)
+})
+
+test('waits for preview metadata before exposing its playable duration', () => {
+  assert.equal(initialPlaybackDuration({ duration: 370, capabilities: { playback: 'preview' } }), 0)
+  assert.equal(initialPlaybackDuration({ duration: 370, capabilities: { playback: 'full' } }), 370)
+  assert.equal(initialPlaybackDuration({ duration: 370, capabilities: { playback: 'none' } }), 0)
 })

@@ -5,6 +5,11 @@ type TrackLike = {
   capabilities: { playback: string }
 }
 
+type DurationTrackLike = {
+  duration: number
+  capabilities: { playback: string }
+}
+
 export declare const playableTracks: <T extends TrackLike>(tracks: readonly T[]) => T[]
 export declare const preferResolvedCurrent: <T extends TrackLike>(requested: T, current: T) => T
 export declare const endedPlaybackAction: (state: {
@@ -22,3 +27,4 @@ export declare const playbackVisualState: (state: {
   buffering: boolean
 }) => 'idle' | 'resolving' | 'buffering' | 'playing'
 export declare const seekPosition: (value: number, duration: number) => number | null
+export declare const initialPlaybackDuration: (track: DurationTrackLike) => number

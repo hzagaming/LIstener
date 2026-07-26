@@ -7,8 +7,8 @@ import {
 } from 'lucide-react'
 import { playlists, tracks as initialTracks } from './data/catalog'
 import {
-  endedPlaybackAction, mediaLoadKey, playableTracks, playbackVisualState, preferResolvedCurrent,
-  removalFocusIndex, seekPosition,
+  endedPlaybackAction, initialPlaybackDuration, mediaLoadKey, playableTracks, playbackVisualState,
+  preferResolvedCurrent, removalFocusIndex, seekPosition,
 } from './playerLogic.mjs'
 import { searchFallbackTracks } from './searchLogic.mjs'
 import { musicProvider, sourceLabel } from './services/musicProvider'
@@ -174,7 +174,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [isBuffering, setIsBuffering] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [duration, setDuration] = useState(current.duration)
+  const [duration, setDuration] = useState(() => initialPlaybackDuration(current))
   const [volume, setVolume] = useState(() => Math.min(1, Math.max(0, readStoredNumber('listener.volume', 0.72))))
   const [queueOpen, setQueueOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -503,7 +503,7 @@ function App() {
       if (current.audioUrl !== track.audioUrl) {
         setCurrent(track)
         setProgress(0)
-        setDuration(track.duration)
+        setDuration(initialPlaybackDuration(track))
         setIsPlaying(true)
         setIsBuffering(true)
         return
@@ -520,7 +520,7 @@ function App() {
     }
     setCurrent(track)
     setProgress(0)
-    setDuration(track.duration)
+    setDuration(initialPlaybackDuration(track))
     setIsPlaying(true)
     setIsBuffering(true)
   }
@@ -825,7 +825,7 @@ function App() {
       const replacement = queue.find((item) => trackKey(item) !== key) ?? initialTracks[0]
       setCurrent(replacement)
       setProgress(0)
-      setDuration(replacement.duration)
+      setDuration(initialPlaybackDuration(replacement))
       setIsPlaying(false)
       setIsBuffering(false)
     }

@@ -7,7 +7,8 @@ import {
 } from 'lucide-react'
 import { playlists, tracks as initialTracks } from './data/catalog'
 import {
-  endedPlaybackAction, mediaLoadKey, playableTracks, preferResolvedCurrent, removalFocusIndex,
+  endedPlaybackAction, mediaLoadKey, playableTracks, playbackVisualState, preferResolvedCurrent,
+  removalFocusIndex, seekPosition,
 } from './playerLogic.mjs'
 import { searchFallbackTracks } from './searchLogic.mjs'
 import { musicProvider, sourceLabel } from './services/musicProvider'
@@ -108,6 +109,7 @@ type TrackRowProps = {
   current: boolean
   playing?: boolean
   pending?: boolean
+  buffering?: boolean
   liked: boolean
   onPlay: () => void
   onLike: () => void
@@ -118,15 +120,25 @@ type TrackRowProps = {
 }
 
 function TrackRow({
-  track, index, current, playing, pending, liked, onPlay, onLike, onPlaylist,
+  track, index, current, playing, pending, buffering, liked, onPlay, onLike, onPlaylist,
   onLyrics, onDownload, onRemove,
 }: TrackRowProps) {
   const playbackUnavailable = track.capabilities.playback === 'none'
-  const playLabel = playbackUnavailable ? `无法播放 ${track.title}` : pending ? `正在加载 ${track.title}` : current && playing ? `暂停 ${track.title}` : `播放 ${track.title}`
+  const visualState = playbackVisualState({
+    current, playing: Boolean(playing), resolving: Boolean(pending), buffering: Boolean(buffering),
+  })
+  const loading = visualState === 'resolving' || visualState === 'buffering'
+  const playLabel = playbackUnavailable
+    ? `无法播放 ${track.title}`
+    : visualState === 'resolving'
+      ? `正在连接 ${track.title}`
+      : visualState === 'buffering'
+        ? `正在缓冲 ${track.title}，点击暂停`
+        : visualState === 'playing' ? `暂停 ${track.title}` : `播放 ${track.title}`
   return (
     <div className={`track-row ${current ? 'track-row--current' : ''}`} role="listitem">
-      <button className="track-row__play" aria-label={playLabel} title={playbackUnavailable ? '来源未提供可播放音源' : undefined} aria-busy={pending} aria-pressed={current && playing} disabled={playbackUnavailable || pending} onClick={onPlay}>
-        <span>{String(index + 1).padStart(2, '0')}</span>{pending ? <LoaderCircle className="spin" /> : current && playing ? <Pause /> : <Play fill="currentColor" />}
+      <button className="track-row__play" aria-label={playLabel} title={playbackUnavailable ? '来源未提供可播放音源' : undefined} aria-busy={loading} aria-pressed={visualState === 'playing'} disabled={playbackUnavailable || pending} onClick={onPlay}>
+        <span>{String(index + 1).padStart(2, '0')}</span>{loading ? <LoaderCircle className="spin" /> : visualState === 'playing' ? <Pause /> : <Play fill="currentColor" />}
       </button>
       <Cover name={track.cover} size="small" />
       <div className="track-row__title">
@@ -160,6 +172,7 @@ function App() {
   const [queue, setQueue] = useState<Track[]>(() => playableTracks(readStoredTracks('listener.queue', initialTracks.slice(0, 6), true)))
   const [current, setCurrent] = useState<Track>(() => readStoredTrack('listener.current', initialTracks[0]))
   const [isPlaying, setIsPlaying] = useState(false)
+  const [isBuffering, setIsBuffering] = useState(false)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(current.duration)
   const [volume, setVolume] = useState(() => Math.min(1, Math.max(0, readStoredNumber('listener.volume', 0.72))))
@@ -220,13 +233,15 @@ function App() {
   const showNotice = (message: string) => {
     setNotice(message)
     if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
-    noticeTimerRef.current = window.setTimeout(() => setNotice(''), 1800)
+    noticeTimerRef.current = window.setTimeout(() => setNotice(''), 2800)
   }
 
   const attemptPlayback = (audio: HTMLAudioElement) => {
+    if (audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) setIsBuffering(true)
     void audio.play().catch((error: unknown) => {
       if (audioRef.current !== audio) return
       setIsPlaying(false)
+      setIsBuffering(false)
       if (error instanceof DOMException && error.name === 'AbortError') return
       showNotice(error instanceof DOMException && error.name === 'NotAllowedError'
         ? '播放被浏览器拦截，请再次点击播放'
@@ -305,9 +320,26 @@ function App() {
     if (current.source !== 'local') writeStorage('listener.current', prepareStoredTrack(current))
     document.title = `${current.title} · ${current.artist} — Listener`
     if ('mediaSession' in navigator && 'MediaMetadata' in window) {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: current.title, artist: current.artist, album: current.album })
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: current.title,
+        artist: current.artist,
+        album: current.album,
+        artwork: /^https?:\/\//.test(current.cover) ? [{ src: current.cover }] : undefined,
+      })
     }
   }, [current])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    try { navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused' } catch { /* unsupported state */ }
+  }, [isPlaying])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function') return
+    const position = seekPosition(progress, duration)
+    if (position === null) return
+    try { navigator.mediaSession.setPositionState({ duration, playbackRate: 1, position }) } catch { /* unsupported media */ }
+  }, [duration, progress])
 
   useEffect(() => () => {
     playRequestRef.current += 1
@@ -473,11 +505,16 @@ function App() {
         setProgress(0)
         setDuration(track.duration)
         setIsPlaying(true)
+        setIsBuffering(true)
         return
       }
       const audio = audioRef.current
       if (!audio) return
-      if (mode === 'toggle' && !audio.paused) audio.pause()
+      if (mode === 'toggle' && isBuffering) {
+        audio.pause()
+        setIsPlaying(false)
+        setIsBuffering(false)
+      } else if (mode === 'toggle' && !audio.paused) audio.pause()
       else if (audio.paused) attemptPlayback(audio)
       return
     }
@@ -485,6 +522,7 @@ function App() {
     setProgress(0)
     setDuration(track.duration)
     setIsPlaying(true)
+    setIsBuffering(true)
   }
 
   const resolveAndPlay = async (track: Track, list?: Track[], mode: PlayMode = 'toggle') => {
@@ -550,6 +588,12 @@ function App() {
     }
     const audio = audioRef.current
     if (!audio) return
+    if (isBuffering) {
+      audio.pause()
+      setIsPlaying(false)
+      setIsBuffering(false)
+      return
+    }
     if (!audio.paused) {
       audio.pause()
       return
@@ -586,6 +630,7 @@ function App() {
       repeatMode,
     })
     setIsPlaying(false)
+    setIsBuffering(false)
     if (action === 'restart' && audioRef.current) {
       audioRef.current.currentTime = 0
       attemptPlayback(audioRef.current)
@@ -782,6 +827,7 @@ function App() {
       setProgress(0)
       setDuration(replacement.duration)
       setIsPlaying(false)
+      setIsBuffering(false)
     }
     if (local) window.setTimeout(() => URL.revokeObjectURL(local.url), 0)
     showNotice('已移除本地音乐')
@@ -830,6 +876,7 @@ function App() {
     if (key === currentKey) {
       audioRef.current?.pause()
       setIsPlaying(false)
+      setIsBuffering(false)
     }
   }
 
@@ -839,6 +886,7 @@ function App() {
     audioRef.current?.pause()
     setQueue([])
     setIsPlaying(false)
+    setIsBuffering(false)
     showNotice('播放队列已清空')
   }
 
@@ -854,6 +902,7 @@ function App() {
   const handleAudioError = () => {
     if (!current.audioUrl) return
     setIsPlaying(false)
+    setIsBuffering(false)
     if (current.source === 'demo' || current.source === 'local') {
       showNotice('音源暂时无法播放，请换一首试试')
       return
@@ -871,8 +920,8 @@ function App() {
 
   const seekTo = (value: number) => {
     const audio = audioRef.current
-    if (!audio || !Number.isFinite(duration) || duration <= 0) return
-    const next = Math.min(duration, Math.max(0, value))
+    const next = seekPosition(value, duration)
+    if (!audio || next === null) return
     try {
       audio.currentTime = next
       setProgress(next)
@@ -934,6 +983,9 @@ function App() {
       }],
       ['previoustrack', () => skip(-1)],
       ['nexttrack', () => skip(1)],
+      ['seekbackward', (details) => seekTo((audioRef.current?.currentTime ?? progress) - (details.seekOffset ?? 10))],
+      ['seekforward', (details) => seekTo((audioRef.current?.currentTime ?? progress) + (details.seekOffset ?? 10))],
+      ['seekto', (details) => { if (typeof details.seekTime === 'number') seekTo(details.seekTime) }],
     ]
     for (const [action, handler] of handlers) {
       try { navigator.mediaSession.setActionHandler(action, handler) } catch { /* unsupported action */ }
@@ -949,6 +1001,15 @@ function App() {
   const resultHeading = resultQuery.length > 64 ? `${resultQuery.slice(0, 64)}…` : resultQuery
   const seekDuration = Number.isFinite(duration) && duration > 0 ? duration : 0
   const seekProgress = seekDuration ? Math.min(seekDuration, Math.max(0, progress)) : 0
+  const playerVisualState = playbackVisualState({
+    current: true, playing: isPlaying, resolving: Boolean(pendingTrackKey), buffering: isBuffering,
+  })
+  const playerLoading = playerVisualState === 'resolving' || playerVisualState === 'buffering'
+  const playerStateLabel = playerVisualState === 'resolving'
+    ? '正在切换'
+    : playerVisualState === 'buffering'
+      ? '正在缓冲'
+      : playerVisualState === 'playing' ? '正在播放' : ''
 
   return (
     <div className="app-shell">
@@ -1027,12 +1088,16 @@ function App() {
                   const isCurrent = currentKey === key
                   const isLiked = liked.has(key)
                   const isPending = pendingTrackKey === key
+                  const visualState = playbackVisualState({
+                    current: isCurrent, playing: isPlaying, resolving: isPending, buffering: isBuffering,
+                  })
+                  const loading = visualState === 'resolving' || visualState === 'buffering'
                   return (
                   <article className={`track-card ${isCurrent ? 'track-card--current' : ''}`} key={key}>
                     <div className="track-card__number">0{index + 1}</div>
-                    <button className="track-card__cover" disabled={isPending} aria-busy={isPending} aria-pressed={isCurrent && isPlaying} onClick={() => void resolveAndPlay(track, initialTracks)} aria-label={isPending ? `正在加载 ${track.title}` : isCurrent && isPlaying ? `暂停 ${track.title}` : `播放 ${track.title}`}>
+                    <button className="track-card__cover" disabled={isPending} aria-busy={loading} aria-pressed={visualState === 'playing'} onClick={() => void resolveAndPlay(track, initialTracks)} aria-label={visualState === 'resolving' ? `正在连接 ${track.title}` : visualState === 'buffering' ? `正在缓冲 ${track.title}，点击暂停` : visualState === 'playing' ? `暂停 ${track.title}` : `播放 ${track.title}`}>
                       <Cover name={track.cover} />
-                      <span className="cover-play">{isPending ? <LoaderCircle className="spin" /> : isCurrent && isPlaying ? <Pause /> : <Play fill="currentColor" />}</span>
+                      <span className="cover-play">{loading ? <LoaderCircle className="spin" /> : visualState === 'playing' ? <Pause /> : <Play fill="currentColor" />}</span>
                     </button>
                     <div className="track-card__meta">
                       <h3>{track.title}</h3>
@@ -1110,6 +1175,7 @@ function App() {
                     current={currentKey === trackKey(track)}
                     playing={isPlaying}
                     pending={pendingTrackKey === trackKey(track)}
+                    buffering={isBuffering && currentKey === trackKey(track)}
                     liked={liked.has(trackKey(track))}
                     onPlay={() => void resolveAndPlay(track, displayResults)}
                     onLike={() => toggleLike(track)}
@@ -1142,6 +1208,7 @@ function App() {
                       key={trackKey(track)} track={track} index={index}
                       current={currentKey === trackKey(track)} playing={isPlaying}
                       pending={pendingTrackKey === trackKey(track)}
+                      buffering={isBuffering && currentKey === trackKey(track)}
                       liked={liked.has(trackKey(track))}
                       onPlay={() => void resolveAndPlay(track, localTracks)}
                       onLike={() => toggleLike(track)}
@@ -1186,6 +1253,7 @@ function App() {
                       key={trackKey(track)} track={track} index={index}
                       current={currentKey === trackKey(track)} playing={isPlaying}
                       pending={pendingTrackKey === trackKey(track)}
+                      buffering={isBuffering && currentKey === trackKey(track)}
                       liked={liked.has(trackKey(track))}
                       onPlay={() => void resolveAndPlay(track, selectedPlaylist.tracks)}
                       onLike={() => toggleLike(track)}
@@ -1211,6 +1279,7 @@ function App() {
                   key={trackKey(track)} track={track} index={index}
                   current={currentKey === trackKey(track)} playing={isPlaying} liked
                   pending={pendingTrackKey === trackKey(track)}
+                  buffering={isBuffering && currentKey === trackKey(track)}
                   onPlay={() => void resolveAndPlay(track, likedTracks)}
                   onLike={() => toggleLike(track)}
                   onPlaylist={() => openPlaylistDialog(track)}
@@ -1278,14 +1347,17 @@ function App() {
         </>
       )}
 
-      <footer className="player" {...(queueOpen || mobileNavOpen || dialogOpen ? { inert: '' } : {})}>
+      <footer className={`player ${playerVisualState === 'playing' ? 'player--playing' : ''} ${playerLoading ? 'player--loading' : ''}`} {...(queueOpen || mobileNavOpen || dialogOpen ? { inert: '' } : {})}>
         <audio
           key={mediaLoadKey(current)}
           ref={audioRef}
           src={current.audioUrl || undefined}
           preload="metadata"
           onPlay={(event) => { if (isCurrentAudio(event.currentTarget)) setIsPlaying(true) }}
-          onPause={(event) => { if (isCurrentAudio(event.currentTarget)) setIsPlaying(false) }}
+          onPlaying={(event) => { if (isCurrentAudio(event.currentTarget)) setIsBuffering(false) }}
+          onWaiting={(event) => { if (isCurrentAudio(event.currentTarget) && !event.currentTarget.paused) setIsBuffering(true) }}
+          onStalled={(event) => { if (isCurrentAudio(event.currentTarget) && !event.currentTarget.paused) setIsBuffering(true) }}
+          onPause={(event) => { if (isCurrentAudio(event.currentTarget)) { setIsPlaying(false); setIsBuffering(false) } }}
           onTimeUpdate={(event) => {
             if (isCurrentAudio(event.currentTarget) && Number.isFinite(event.currentTarget.currentTime)) setProgress(event.currentTarget.currentTime)
           }}
@@ -1298,9 +1370,9 @@ function App() {
           onEnded={(event) => { if (isCurrentAudio(event.currentTarget)) handleEnded() }}
           onError={(event) => { if (isCurrentAudio(event.currentTarget)) handleAudioError() }}
         />
-        <div className="player__track"><Cover name={current.cover} size="small" /><div><strong>{current.title}</strong><span>{current.artist} · {sourceLabel(current.source)} · {qualityLabels[current.quality]}{current.capabilities.playback === 'preview' ? '试听' : ''}</span></div><button aria-label={`${liked.has(currentKey) ? '取消收藏' : '收藏'} ${current.title}`} className={`like-button ${liked.has(currentKey) ? 'liked' : ''}`} onClick={() => toggleLike(current)}><Heart fill={liked.has(currentKey) ? 'currentColor' : 'none'} /></button></div>
+        <div className="player__track"><Cover name={current.cover} size="small" /><div><strong>{current.title}</strong><span><b className="player__state" aria-live="polite">{playerStateLabel}{playerStateLabel ? ' · ' : ''}</b>{current.artist} · {sourceLabel(current.source)} · {qualityLabels[current.quality]}{current.capabilities.playback === 'preview' ? '试听' : ''}</span></div><button aria-label={`${liked.has(currentKey) ? '取消收藏' : '收藏'} ${current.title}`} className={`like-button ${liked.has(currentKey) ? 'liked' : ''}`} onClick={() => toggleLike(current)}><Heart fill={liked.has(currentKey) ? 'currentColor' : 'none'} /></button></div>
         <div className="player__center">
-          <div className="player__controls"><button aria-label="随机播放" disabled={queue.length < 2} onClick={shuffle}><Shuffle /></button><button aria-label="上一首" disabled={!queue.length} onClick={() => skip(-1)}><SkipBack fill="currentColor" /></button><button className="play-main" aria-label={current.capabilities.playback === 'none' ? '当前歌曲无法播放' : pendingTrackKey ? '取消加载' : isPlaying ? '暂停' : '播放'} aria-busy={Boolean(pendingTrackKey)} disabled={current.capabilities.playback === 'none'} onClick={togglePlay}>{pendingTrackKey ? <LoaderCircle className="spin" /> : isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button><button aria-label="下一首" disabled={!queue.length} onClick={() => skip(1)}><SkipForward fill="currentColor" /></button><button className={repeatMode === 'off' ? '' : 'active'} aria-label={`循环模式：${repeatMode === 'off' ? '关闭' : repeatMode === 'all' ? '列表循环' : '单曲循环'}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeat}>{repeatMode === 'one' ? <Repeat1 /> : <Repeat />}</button><button aria-label="播放队列" onClick={openQueue}><ListMusic /></button></div>
+          <div className="player__controls"><button aria-label="随机播放" disabled={queue.length < 2} onClick={shuffle}><Shuffle /></button><button aria-label="上一首" disabled={!queue.length} onClick={() => skip(-1)}><SkipBack fill="currentColor" /></button><button className="play-main" aria-label={current.capabilities.playback === 'none' ? '当前歌曲无法播放' : playerVisualState === 'resolving' ? '取消加载' : playerVisualState === 'buffering' ? '暂停缓冲' : playerVisualState === 'playing' ? '暂停' : '播放'} aria-busy={playerLoading} disabled={current.capabilities.playback === 'none'} onClick={togglePlay}>{playerLoading ? <LoaderCircle className="spin" /> : playerVisualState === 'playing' ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button><button aria-label="下一首" disabled={!queue.length} onClick={() => skip(1)}><SkipForward fill="currentColor" /></button><button className={repeatMode === 'off' ? '' : 'active'} aria-label={`循环模式：${repeatMode === 'off' ? '关闭' : repeatMode === 'all' ? '列表循环' : '单曲循环'}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeat}>{repeatMode === 'one' ? <Repeat1 /> : <Repeat />}</button><button aria-label="播放队列" onClick={openQueue}><ListMusic /></button></div>
           <div className="player__progress"><span>{formatTime(seekProgress)}</span><input aria-label="播放进度" aria-valuetext={`${formatTime(seekProgress)} / ${formatTime(seekDuration)}`} disabled={!seekDuration} type="range" min="0" max={seekDuration || 1} step="0.1" value={seekProgress} style={{ '--progress': `${seekDuration ? (seekProgress / seekDuration) * 100 : 0}%` } as React.CSSProperties} onChange={(event) => seekTo(Number(event.target.value))} /><span>{formatTime(seekDuration)}</span></div>
         </div>
         <div className="player__tools"><button aria-label={`将 ${current.title} 加入歌单`} onClick={() => openPlaylistDialog(current)}><ListPlus /></button><button className={current.capabilities.lyrics ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.lyrics} aria-label={current.capabilities.lyrics ? `查看 ${current.title} 的歌词` : `${current.title} 的歌词不可用`} onClick={() => void openLyrics(current)}><FileText /></button><button className={current.capabilities.download ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.download} aria-label={current.capabilities.download ? `下载 ${current.title}` : `${current.title} 不可下载`} onClick={() => void downloadTrack(current)}><Download /></button><button className="volume-button" aria-label={volume > 0 ? '静音' : '取消静音'} aria-pressed={volume === 0} onClick={toggleMute}>{volume > 0 ? <Volume2 /> : <VolumeX />}</button><input aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} type="range" min="0" max="1" step="0.01" value={volume} style={{ '--progress': `${volume * 100}%` } as React.CSSProperties} onChange={(event) => setVolume(Number(event.target.value))} /></div>

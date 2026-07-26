@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  endedPlaybackAction, mediaLoadKey, playableTracks, preferResolvedCurrent, removalFocusIndex,
+  endedPlaybackAction, mediaLoadKey, playableTracks, playbackVisualState, preferResolvedCurrent,
+  removalFocusIndex, seekPosition,
 } from './playerLogic.mjs'
 
 const track = (id, playback = 'full', audioUrl = '') => ({
@@ -48,4 +49,19 @@ test('keeps removal focus on the nearest remaining item', () => {
   assert.equal(removalFocusIndex(1, 2), 1)
   assert.equal(removalFocusIndex(2, 2), 1)
   assert.equal(removalFocusIndex(0, 0), -1)
+})
+
+test('prioritizes resolve and buffer feedback over playback state', () => {
+  assert.equal(playbackVisualState({ current: false, playing: false, resolving: true, buffering: false }), 'resolving')
+  assert.equal(playbackVisualState({ current: true, playing: true, resolving: false, buffering: true }), 'buffering')
+  assert.equal(playbackVisualState({ current: true, playing: true, resolving: false, buffering: false }), 'playing')
+  assert.equal(playbackVisualState({ current: false, playing: true, resolving: false, buffering: true }), 'idle')
+})
+
+test('clamps media session seek positions to a playable range', () => {
+  assert.equal(seekPosition(40, 120), 40)
+  assert.equal(seekPosition(-10, 120), 0)
+  assert.equal(seekPosition(140, 120), 120)
+  assert.equal(seekPosition(Number.NaN, 120), null)
+  assert.equal(seekPosition(10, 0), null)
 })

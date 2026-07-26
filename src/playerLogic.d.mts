@@ -15,3 +15,10 @@ export declare const endedPlaybackAction: (state: {
 }) => 'ignore' | 'stop' | 'restart' | 'next'
 export declare const mediaLoadKey: (track: TrackLike) => string
 export declare const removalFocusIndex: (removedIndex: number, remainingLength: number) => number
+export declare const playbackVisualState: (state: {
+  current: boolean
+  playing: boolean
+  resolving: boolean
+  buffering: boolean
+}) => 'idle' | 'resolving' | 'buffering' | 'playing'
+export declare const seekPosition: (value: number, duration: number) => number | null

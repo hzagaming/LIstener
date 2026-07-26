@@ -19,3 +19,16 @@ export const mediaLoadKey = (track) => JSON.stringify([track.source, track.id, t
 export const removalFocusIndex = (removedIndex, remainingLength) => (
   remainingLength > 0 ? Math.min(Math.max(removedIndex, 0), remainingLength - 1) : -1
 )
+
+export const playbackVisualState = ({ current, playing, resolving, buffering }) => {
+  if (resolving) return 'resolving'
+  if (!current) return 'idle'
+  if (buffering) return 'buffering'
+  return playing ? 'playing' : 'idle'
+}
+
+export const seekPosition = (value, duration) => (
+  Number.isFinite(value) && Number.isFinite(duration) && duration > 0
+    ? Math.min(duration, Math.max(0, value))
+    : null
+)

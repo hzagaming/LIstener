@@ -30,3 +30,9 @@ test('GitHub Pages deploys dist without probing an unavailable API', async () =>
   assert.match(workflow, /VITE_STATIC_DEMO:\s*['"]true['"]/)
   assert.match(workflow, /actions\/deploy-pages@/)
 })
+
+test('the first render does not depend on external stylesheets', async () => {
+  const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(styles, /@import\s+(?:url\()?['"]?https?:\/\//i)
+})

@@ -204,7 +204,7 @@ class ApiProvider implements MusicProvider {
 }
 
 const demoProvider = new DemoProvider()
-const apiBase = import.meta.env.VITE_MUSIC_API_BASE?.trim() || window.location.origin
-
-export const musicProvider: MusicProvider = new ApiProvider(apiBase, demoProvider)
+export const musicProvider: MusicProvider = import.meta.env.VITE_STATIC_DEMO === 'true'
+  ? demoProvider
+  : new ApiProvider(import.meta.env.VITE_MUSIC_API_BASE?.trim() || window.location.origin, demoProvider)
 export const sourceLabel = (source: MusicSource) => labels[source]

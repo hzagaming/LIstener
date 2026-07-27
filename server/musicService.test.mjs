@@ -400,6 +400,15 @@ test('validates resolved URLs and looked-up tracks at the service boundary', asy
     providers: [{ id: 'safe', search: async () => [], lookup: async () => ({ ...track('1'), source: 'spoofed' }) }],
   })
   await assert.rejects(() => invalidTrack.lookup('safe', '1'), /invalid provider track/)
+
+  const credentialUrl = createMusicService({
+    providers: [{
+      id: 'safe',
+      search: async () => [],
+      lookup: async () => ({ ...track('1'), source: 'safe', sourceUrl: 'https://user:secret@music.example/1' }),
+    }],
+  })
+  await assert.rejects(() => credentialUrl.lookup('safe', '1'), /invalid provider track/)
 })
 
 test('rejects malformed download descriptors consistently', async () => {
@@ -476,4 +485,146 @@ test('exposes provider capabilities and gates lyrics and downloads', async () =>
   await assert.rejects(() => service.lyrics('preview', '7'), /lyrics are unavailable/)
   await assert.rejects(() => service.download('preview', '7'), /download is unavailable/)
   await assert.rejects(() => service.lookup('preview', '7'), /track lookup is unavailable/)
+})
+
+test('searches one provider with pagination and reports cache metadata', async () => {
+  const calls = []
+  const appleTracks = Array.from({ length: 3 }, (_, index) => ({
+    ...track(String(index + 1)),
+    source: 'apple',
+  }))
+  const service = createMusicService({ providers: [
+    {
+      id: 'apple',
+      name: 'Apple Music',
+      official: true,
+      capabilities: { search: true, playback: true, lyrics: false, download: false },
+      async search(query, limit, _signal, page) {
+        calls.push(['apple', query, limit, page])
+        return appleTracks
+      },
+    },
+    { id: 'unused', search: async () => { throw new Error('must not run') } },
+  ] })
+
+  const first = await service.searchDetailed({ query: ' 海 ', provider: 'apple', page: 2, pageSize: 3 })
+  const cached = await service.searchDetailed({ query: '海', provider: 'apple', page: 2, pageSize: 3 })
+  assert.deepEqual(first.tracks, appleTracks.slice(0, 3))
+  assert.equal(first.hasMore, true)
+  assert.equal(first.cached, false)
+  assert.equal(cached.cached, true)
+  assert.deepEqual(calls, [['apple', '海', 3, 2]])
+})
+
+test('reports provider failures without caching a partial detailed search', async () => {
+  let failingCalls = 0
+  const service = createMusicService({ providers: [
+    { id: 'healthy', search: async () => [{ ...track('1'), source: 'healthy' }] },
+    { id: 'failing', search: async () => { failingCalls += 1; throw new Error('secret upstream detail') } },
+  ] })
+
+  for (let index = 0; index < 2; index += 1) {
+    const result = await service.searchDetailed({ query: 'song', provider: 'all', page: 1, pageSize: 20 })
+    assert.deepEqual(result.providerErrors, [{ provider: 'failing', code: 'PROVIDER_UNAVAILABLE' }])
+    assert.equal(result.cached, false)
+  }
+  assert.equal(failingCalls, 2)
+  assert.deepEqual(service.providerDetails.map(({ id, status }) => [id, status]), [
+    ['healthy', 'healthy'],
+    ['failing', 'unavailable'],
+  ])
+})
+
+test('negative-caches a complete provider outage briefly', async () => {
+  let calls = 0
+  const service = createMusicService({
+    failureTtlMs: 1_000,
+    providers: [{ id: 'offline', search: async () => { calls += 1; throw new Error('offline') } }],
+  })
+
+  await assert.rejects(() => service.searchDetailed({ query: 'song' }), /all music providers failed/)
+  await assert.rejects(() => service.searchDetailed({ query: 'song' }), /all music providers failed/)
+  assert.equal(calls, 1)
+})
+
+test('caches validated track details and normalized lyrics independently', async () => {
+  let lookupCalls = 0
+  let lyricsCalls = 0
+  const service = createMusicService({ providers: [{
+    id: 'fixture',
+    capabilities: { search: true, playback: false, lyrics: true, download: false },
+    search: async () => [],
+    lookup: async (id) => { lookupCalls += 1; return { ...track(id), source: 'fixture' } },
+    lyrics: async () => { lyricsCalls += 1; return { plain: 'line', lrc: '', lines: [] } },
+  }] })
+
+  assert.deepEqual(await service.lookup('fixture', '1'), await service.lookup('fixture', '1'))
+  assert.deepEqual(await service.lyrics('fixture', '1'), await service.lyrics('fixture', '1'))
+  assert.equal(lookupCalls, 1)
+  assert.equal(lyricsCalls, 1)
+})
+
+test('publishes provider registry metadata without exposing implementation details', () => {
+  const service = createMusicService({ providers: [{
+    id: 'fixture',
+    name: 'Local Fixture',
+    enabled: true,
+    experimental: false,
+    official: false,
+    allowedHosts: [],
+    capabilities: { search: true, playback: false, lyrics: true, download: false },
+    search: async () => [],
+  }] })
+
+  assert.deepEqual(service.providerDetails, [{
+    id: 'fixture',
+    name: 'Local Fixture',
+    status: 'healthy',
+    experimental: false,
+    official: false,
+    capabilities: { search: true, playback: false, lyrics: true, download: false },
+  }])
+})
+
+test('keeps disabled providers visible but blocks every operation', async () => {
+  const service = createMusicService({ providers: [{
+    id: 'disabled',
+    enabled: false,
+    capabilities: { search: true, playback: true, lyrics: true, download: false },
+    search: async () => [track('1')],
+    resolve: async () => 'https://audio.example/1',
+  }] })
+
+  assert.deepEqual(service.sources, [])
+  assert.equal(service.providerDetails[0].status, 'disabled')
+  await assert.rejects(
+    () => service.searchDetailed({ query: 'song', provider: 'disabled' }),
+    /music source is disabled/,
+  )
+  await assert.rejects(() => service.resolve('disabled', '1'), /music source is disabled/)
+})
+
+test('rejects duplicate provider registrations', () => {
+  assert.throws(() => createMusicService({
+    providers: [{ id: 'same', search: async () => [] }, { id: 'same', search: async () => [] }],
+  }), /duplicate music provider id/)
+})
+
+test('bounds aggregate provider concurrency', async () => {
+  let active = 0
+  let peak = 0
+  const providers = Array.from({ length: 5 }, (_, index) => ({
+    id: `provider-${index}`,
+    async search() {
+      active += 1
+      peak = Math.max(peak, active)
+      await new Promise((resolve) => setImmediate(resolve))
+      active -= 1
+      return [{ ...track(String(index)), source: `provider-${index}` }]
+    },
+  }))
+  const service = createMusicService({ providers, maxConcurrentProviders: 2 })
+
+  assert.equal((await service.search('song')).length, 5)
+  assert.equal(peak, 2)
 })

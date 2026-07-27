@@ -47,7 +47,7 @@ test('searches Audius with a server-side API key and normalizes public tracks', 
   assert.equal(request.url.searchParams.get('limit'), '50')
   assert.equal(request.url.searchParams.get('offset'), '0')
   assert.equal(request.url.searchParams.get('api_key'), 'test-key')
-  assert.equal(request.options.redirect, 'error')
+  assert.equal(request.options.redirect, 'manual')
   assert.equal(provider.capabilities.download, false)
 })
 
@@ -148,7 +148,7 @@ test('looks up tracks and resolves only public streams without exposing the API 
   const streamRequest = requests.find(({ url }) => url.pathname.endsWith('/stream'))
   assert.equal(streamRequest.url.searchParams.get('no_redirect'), 'true')
   assert.equal(streamRequest.url.searchParams.get('api_key'), 'private-key')
-  assert.equal(streamRequest.options.redirect, 'error')
+  assert.equal(streamRequest.options.redirect, 'manual')
   assert.equal(requests.every(({ url }) => url.origin === 'https://api.audius.co'), true)
 })
 

@@ -1,4 +1,5 @@
 import { createRequestScheduler } from './rateLimit.mjs'
+import { createProviderHttpClient, ProviderHttpError } from '../providerHttpClient.mjs'
 
 const DEFAULT_BASE_URL = 'https://musicbrainz.org/ws/2/recording/'
 const recordingId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -41,6 +42,8 @@ export const createMusicBrainzProvider = ({
   fetchImpl = globalThis.fetch,
   baseUrl = DEFAULT_BASE_URL,
   timeoutMs = 8_000,
+  responseLimitBytes = 2_097_152,
+  maxRetries = 1,
   minIntervalMs = 1_000,
   now = Date.now,
   waitImpl,
@@ -60,38 +63,47 @@ export const createMusicBrainzProvider = ({
   endpoint.search = ''
   endpoint.hash = ''
   const schedule = createRequestScheduler({ minIntervalMs, now, waitImpl })
+  const http = createProviderHttpClient({
+    allowedHosts: ['musicbrainz.org'],
+    fetchImpl,
+    timeoutMs,
+    maxResponseBytes: responseLimitBytes,
+    maxRetries,
+    userAgent: `Listener/0.4.2 (${normalizedContact})`,
+  })
 
   const request = (url, signal, notFound = false) => {
     const requestSignal = signal
       ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
       : AbortSignal.timeout(timeoutMs)
     return schedule(async () => {
-      const response = await fetchImpl(url, {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': `Listener/0.4.1 (${normalizedContact})`,
-        },
-        redirect: 'error',
-        signal: requestSignal,
-      })
-      if (notFound && response.status === 404) {
-        throw Object.assign(new Error('MusicBrainz track not found'), { code: 'TRACK_NOT_FOUND' })
+      try {
+        return await http.json(url, { signal: requestSignal })
+      } catch (error) {
+        if (notFound && error instanceof ProviderHttpError && error.status === 404) {
+          throw Object.assign(new Error('MusicBrainz track not found'), { code: 'TRACK_NOT_FOUND' })
+        }
+        throw error
       }
-      if (!response.ok) throw new Error(`MusicBrainz request failed: ${response.status}`)
-      return response.json()
     }, requestSignal)
   }
 
   return {
     id: 'musicbrainz',
+    name: 'MusicBrainz',
+    enabled: true,
+    experimental: false,
+    official: true,
+    allowedHosts: ['musicbrainz.org'],
     capabilities: { search: true, playback: false, lyrics: false, download: false },
 
-    async search(query, limit = 20, signal) {
+    async search(query, limit = 20, signal, page = 1) {
       const value = query.trim()
       if (!value) return []
       const url = new URL(endpoint)
       url.searchParams.set('query', value)
       url.searchParams.set('limit', String(Math.min(50, Math.max(1, limit))))
+      url.searchParams.set('offset', String(Math.max(0, page - 1) * limit))
       url.searchParams.set('fmt', 'json')
       const payload = await request(url, signal)
       if (!Array.isArray(payload?.recordings)) throw new Error('invalid MusicBrainz response')

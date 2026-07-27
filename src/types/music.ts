@@ -2,6 +2,7 @@ export const musicSources = [
   'netease', 'qq', 'kugou', 'kuwo', 'qianqian', '1ting', 'migu', 'lizhi',
   'qingting', 'ximalaya', '5sing-original', '5sing-cover', 'qmkg', 'apple',
   'musicbrainz', 'audius', 'local', 'demo',
+  'fixture',
 ] as const
 export type MusicSource = typeof musicSources[number]
 
@@ -65,6 +66,9 @@ export interface MusicIdentification {
 export interface Lyrics {
   plain: string
   lrc: string
+  lines?: Array<{ timeMs: number; text: string }>
+  language?: string | null
+  translated?: string | null
 }
 
 export interface DownloadDescriptor {

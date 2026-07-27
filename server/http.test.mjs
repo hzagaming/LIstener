@@ -256,3 +256,126 @@ test('rate limits repeated API requests', async () => {
     assert.equal((await limited.json()).error.code, 'RATE_LIMITED')
   })
 })
+
+test('uses the versioned error envelope when music API requests are rate limited', async () => {
+  const service = { providerDetails: [], sources: [] }
+
+  await withServer(createApiHandler({
+    service,
+    rateLimit: 1,
+    requestId: () => 'req-limit',
+    now: () => 100,
+  }), async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/api/music/providers`)).status, 200)
+    const limited = await fetch(`${baseUrl}/api/music/providers`)
+    assert.equal(limited.status, 429)
+    assert.deepEqual(await limited.json(), {
+      success: false,
+      data: null,
+      meta: { request_id: 'req-limit', elapsed_ms: 0 },
+      error: { code: 'RATE_LIMITED', message: 'too many requests' },
+    })
+  })
+})
+
+test('serves the versioned provider, search, detail, lyrics, and playback API', async () => {
+  const calls = []
+  const providers = [{
+    id: 'fixture', name: 'Local Fixture', status: 'healthy', experimental: false, official: false,
+    capabilities: { search: true, playback: false, lyrics: true, download: false },
+  }]
+  const service = {
+    sources: ['fixture'],
+    providerDetails: providers,
+    async searchDetailed(options) {
+      calls.push(['searchDetailed', options])
+      return {
+        tracks: [{ id: 'fixture-1', source: 'fixture' }],
+        providerErrors: [],
+        cached: false,
+        hasMore: false,
+      }
+    },
+    async lookup(source, id) { calls.push(['lookup', source, id]); return { id, source } },
+    async lyrics(source, id) { calls.push(['lyrics', source, id]); return { plain: 'line', lrc: '', lines: [] } },
+    async resolve(source, id) { calls.push(['resolve', source, id]); return 'https://audio.example/preview.mp3' },
+  }
+
+  await withServer(createApiHandler({ service, requestId: () => 'req-1', now: () => 100 }), async (baseUrl) => {
+    const providerResponse = await fetch(`${baseUrl}/api/music/providers`)
+    assert.deepEqual(await providerResponse.json(), {
+      success: true,
+      data: { providers },
+      meta: { request_id: 'req-1', elapsed_ms: 0 },
+      error: null,
+    })
+
+    const search = await fetch(`${baseUrl}/api/music/search?q=%E6%B5%B7&provider=fixture&page=2&page_size=3`)
+    assert.deepEqual(await search.json(), {
+      success: true,
+      data: {
+        query: '海', provider: 'fixture', page: 2, page_size: 3, has_more: false,
+        items: [{ id: 'fixture-1', source: 'fixture' }],
+      },
+      meta: { request_id: 'req-1', cached: false, elapsed_ms: 0, provider_errors: [] },
+      error: null,
+    })
+
+    assert.deepEqual(await (await fetch(`${baseUrl}/api/music/tracks/fixture/fixture-1`)).json(), {
+      success: true,
+      data: { track: { id: 'fixture-1', source: 'fixture' } },
+      meta: { request_id: 'req-1', elapsed_ms: 0 },
+      error: null,
+    })
+    assert.equal((await fetch(`${baseUrl}/api/music/tracks/fixture/fixture-1/lyrics`)).status, 200)
+    const playback = await fetch(`${baseUrl}/api/music/tracks/fixture/fixture-1/playback`, { method: 'POST' })
+    assert.deepEqual((await playback.json()).data, { playback: { url: 'https://audio.example/preview.mp3' } })
+  })
+
+  assert.deepEqual(calls, [
+    ['searchDetailed', { query: '海', provider: 'fixture', page: 2, pageSize: 3 }],
+    ['lookup', 'fixture', 'fixture-1'],
+    ['lyrics', 'fixture', 'fixture-1'],
+    ['resolve', 'fixture', 'fixture-1'],
+  ])
+})
+
+test('validates versioned search pagination, provider, and playback method', async () => {
+  const service = {
+    sources: ['apple'],
+    providerDetails: [],
+    searchDetailed: async () => ({ tracks: [], providerErrors: [], cached: false, hasMore: false }),
+  }
+
+  await withServer(createApiHandler({ service }), async (baseUrl) => {
+    for (const path of [
+      '/api/music/search',
+      '/api/music/search?q=x&provider=unknown',
+      '/api/music/search?q=x&page=0',
+      '/api/music/search?q=x&page=101',
+      '/api/music/search?q=x&page_size=0',
+      '/api/music/search?q=x&page_size=51',
+    ]) {
+      const response = await fetch(`${baseUrl}${path}`)
+      assert.equal(response.status, 400, path)
+    }
+    const getPlayback = await fetch(`${baseUrl}/api/music/tracks/apple/1/playback`)
+    assert.equal(getPlayback.status, 405)
+  })
+})
+
+test('logs request metadata without query values', async () => {
+  const entries = []
+  const service = { search: async () => [], sources: [] }
+  const logger = { info: (event, fields) => entries.push({ event, ...fields }) }
+
+  await withServer(createApiHandler({ service, logger, requestId: () => 'req-log' }), async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/search?q=private-search`)
+    assert.equal(response.headers.get('x-request-id'), 'req-log')
+  })
+
+  assert.equal(entries.length, 1)
+  assert.equal(entries[0].path, '/api/search')
+  assert.equal(entries[0].requestId, 'req-log')
+  assert.equal(JSON.stringify(entries[0]).includes('private-search'), false)
+})

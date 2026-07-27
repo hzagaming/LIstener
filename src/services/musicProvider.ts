@@ -25,6 +25,7 @@ const labels: Record<MusicSource, string> = {
   audius: 'Audius',
   local: '本地音乐',
   demo: '演示源',
+  fixture: '离线测试源',
 }
 
 const mediaUrl = (value: unknown, allowBlob = false) => {

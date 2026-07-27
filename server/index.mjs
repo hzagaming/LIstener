@@ -5,38 +5,68 @@ import { createAppleProvider } from './providers/apple.mjs'
 import { createAudiusProvider } from './providers/audius.mjs'
 import { createMusicBrainzProvider } from './providers/musicbrainz.mjs'
 import { createNeteaseProvider } from './providers/netease.mjs'
+import { createLocalFixtureProvider } from './providers/localFixture.mjs'
+import { readMusicConfig } from './config.mjs'
+import { createStructuredLogger } from './logger.mjs'
 
-const port = Number.parseInt(process.env.PORT ?? '3000', 10)
-const host = process.env.HOST ?? '127.0.0.1'
-const providers = [createAppleProvider({
-  searchUrl: process.env.APPLE_SEARCH_URL,
-  lookupUrl: process.env.APPLE_LOOKUP_URL,
-  country: process.env.APPLE_COUNTRY,
-})]
-if (process.env.MUSICBRAINZ_CONTACT?.trim()) {
+const config = readMusicConfig()
+const logger = createStructuredLogger()
+const selected = (id) => !config.enabledProviders.length || config.enabledProviders.includes(id)
+const providerHttp = {
+  timeoutMs: config.providerTimeoutMs,
+  responseLimitBytes: config.responseLimitBytes,
+  maxRetries: config.maxRetries,
+}
+const providers = []
+if (selected('apple')) {
+  providers.push(createAppleProvider({
+    country: process.env.APPLE_COUNTRY,
+    ...providerHttp,
+  }))
+}
+if (selected('musicbrainz') && process.env.MUSICBRAINZ_CONTACT?.trim()) {
   providers.push(createMusicBrainzProvider({
     contact: process.env.MUSICBRAINZ_CONTACT,
+    ...providerHttp,
   }))
 }
-if (process.env.AUDIUS_API_KEY?.trim()) {
+if (selected('audius') && process.env.AUDIUS_API_KEY?.trim()) {
   providers.push(createAudiusProvider({
     apiKey: process.env.AUDIUS_API_KEY,
+    ...providerHttp,
   }))
 }
-if (process.env.ENABLE_NETEASE === 'true') {
+if (selected('netease') && (config.enableNetease || config.enabledProviders.includes('netease'))) {
   providers.unshift(createNeteaseProvider({
-    searchUrl: process.env.NETEASE_SEARCH_URL,
-    mediaUrl: process.env.NETEASE_MEDIA_URL,
+    ...providerHttp,
   }))
 }
-const service = createMusicService({ providers })
+if (selected('fixture') && (config.enableFixture || config.enabledProviders.includes('fixture'))) {
+  providers.push(createLocalFixtureProvider())
+}
+if (!providers.length) throw new Error('at least one music provider must be enabled')
+
+const service = createMusicService({
+  providers,
+  ttlMs: config.searchCacheTtlMs,
+  operationTtlMs: config.operationCacheTtlMs,
+  failureTtlMs: config.negativeCacheTtlMs,
+  providerTimeoutMs: config.providerTimeoutMs,
+  maxConcurrentProviders: config.maxConcurrentProviders,
+})
 const server = createServer(createApiHandler({
   service,
-  allowedOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  allowedOrigin: config.corsOrigin,
+  rateLimit: config.apiRateLimit,
+  logger,
 }))
 
-server.listen(port, host, () => {
-  console.log(`Listener API listening on http://${host}:${port}`)
+server.listen(config.port, config.host, () => {
+  logger.info('music_api_listening', {
+    host: config.host,
+    port: config.port,
+    providers: service.sources,
+  })
 })
 
 const shutdown = () => server.close(() => process.exit(0))

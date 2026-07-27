@@ -29,7 +29,7 @@ npm run build
 
 ## 接入音乐源
 
-页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和试听；MusicBrainz 可提供开放录音元数据，Audius 可提供创作者公开音频，网易云作为区域相关的可选来源。并行聚合、缓存、精确去重和来源超时位于 `server/musicService.mjs`。前端演示回退位于 `src/services/musicProvider.ts`。
+页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和可用试听；没有试听的合法元数据仍会保留并标记为不可播放。MusicBrainz 可提供开放录音元数据，Audius 可提供创作者公开音频，网易云仅作为区域相关的实验元数据来源。所有真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。前端演示回退位于 `src/services/musicProvider.ts`。
 
 地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、Apple Music、MusicBrainz 和 Audius API 地址/ID。解析只识别格式，不代表对应平台已经获得搜索、播放或下载授权；健康接口会返回当前实际连接的来源和能力。
 
@@ -45,9 +45,25 @@ npm run build
 - `GET /api/lyrics?source=来源&id=歌曲ID` → Provider 授权的歌词
 - `GET /api/download?source=来源&id=歌曲ID` → Provider 授权的下载描述
 
+新版接口在保持以上契约的同时支持指定来源和分页：
+
+- `GET /api/music/providers`
+- `GET /api/music/search?q=关键词&provider=all&page=1&page_size=20`
+- `GET /api/music/tracks/{provider}/{trackId}`
+- `GET /api/music/tracks/{provider}/{trackId}/lyrics`
+- `POST /api/music/tracks/{provider}/{trackId}/playback`
+
+完整响应格式见 [音乐 API 文档](./docs/music-api.md)。
+
 接口不可用时会自动回退到演示数据并明确显示服务异常，方便前后端独立开发且不会将故障伪装成零结果。
 
-服务端默认限制每个客户端每分钟 60 次请求，搜索结果缓存 30 秒，并对同来源重复记录去重。可用环境变量：`HOST`、`PORT`、`CORS_ORIGIN`、`APPLE_COUNTRY`、`APPLE_SEARCH_URL`、`APPLE_LOOKUP_URL`、`MUSICBRAINZ_CONTACT`、`AUDIUS_API_KEY`、`ENABLE_NETEASE`、`NETEASE_SEARCH_URL`、`NETEASE_MEDIA_URL`。
+服务端默认限制每个客户端每分钟 60 次请求，最多同时调用 3 个 Provider，搜索结果缓存 30 秒，并对同来源重复记录去重。`.env.example` 列出了 Provider 白名单、Fixture/网易开关、超时、响应上限、一次重试、并发数、缓存 TTL 和 API 限流配置。服务端变量需由 shell 或部署平台注入，不会由 Node 自动读取 `.env.example`。
+
+没有外部网络时，可显式启用只含原创测试元数据和歌词、且没有播放地址的 Fixture Provider：
+
+```bash
+ENABLE_LOCAL_FIXTURE=true npm run server
+```
 
 MusicBrainz 要求客户端提供可联系的应用标识，并限制为每秒最多一次请求。设置邮箱或网站地址后启用；该来源只提供 CC0 核心录音元数据，不提供音频：
 
@@ -61,13 +77,11 @@ Audius 只开放官方 API 明确标记为可串流且未设置访问门槛的�
 AUDIUS_API_KEY=你的开发者Key npm run server
 ```
 
-网易云在部分区域会返回加密结果，因此默认关闭。确认部署区域可用后可启用：
+网易云搜索接口未获官方稳定性确认，并且在部分区域会返回加密结果，因此默认关闭。即使显式启用也只提供实验性元数据搜索，不解析或构造播放地址：
 
 ```bash
 ENABLE_NETEASE=true npm run server
 ```
-
-可选配置：`NETEASE_SEARCH_URL`、`NETEASE_MEDIA_URL`。
 
 ## 播放、歌词与下载规则
 
@@ -81,6 +95,8 @@ ENABLE_NETEASE=true npm run server
 ```bash
 npm test
 ```
+
+架构、Provider 开发、安全边界、许可证和参考项目审计位于 [`docs/`](./docs/)。
 
 > 请仅抓取和播放你有权访问的内容，并遵守目标站点的服务条款、robots.txt 与当地法律。
 

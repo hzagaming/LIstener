@@ -1,5 +1,6 @@
+import { createProviderHttpClient } from '../providerHttpClient.mjs'
+
 const DEFAULT_SEARCH_URL = 'https://music.163.com/api/search/get/web'
-const DEFAULT_MEDIA_URL = 'https://music.163.com/song/media/outer/url'
 
 const normalizeDuration = (milliseconds) => {
   const value = Number(milliseconds)
@@ -22,52 +23,56 @@ const normalizeSong = (song) => {
     cover: String(album?.picUrl || 'night'),
     sourceUrl: `https://music.163.com/#/song?id=${song.id}`,
     quality: 'unknown',
-    capabilities: { playback: 'full', lyrics: false, download: false },
+    capabilities: { playback: 'none', lyrics: false, download: false },
   }
 }
 
 export const createNeteaseProvider = ({
   fetchImpl = globalThis.fetch,
   searchUrl = DEFAULT_SEARCH_URL,
-  mediaUrl = DEFAULT_MEDIA_URL,
   timeoutMs = 8_000,
-} = {}) => ({
-  id: 'netease',
-  capabilities: { search: true, playback: true, lyrics: false, download: false },
+  responseLimitBytes = 2_097_152,
+  maxRetries = 1,
+} = {}) => {
+  const http = createProviderHttpClient({
+    allowedHosts: ['music.163.com'],
+    fetchImpl,
+    timeoutMs,
+    maxResponseBytes: responseLimitBytes,
+    maxRetries,
+  })
+  return {
+    id: 'netease',
+    name: 'NetEase Music',
+    enabled: true,
+    experimental: true,
+    official: false,
+    allowedHosts: ['music.163.com'],
+    capabilities: { search: true, playback: false, lyrics: false, download: false },
 
-  async search(query, limit = 20, signal) {
-    const body = new URLSearchParams({
-      s: query.trim(),
-      type: '1',
-      offset: '0',
-      total: 'true',
-      limit: String(Math.min(50, Math.max(1, limit))),
-    })
-    const response = await fetchImpl(searchUrl, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        Referer: 'https://music.163.com/',
-        'User-Agent': 'Listener/0.4.1 (+music metadata search)',
-      },
-      body,
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
-    })
-    if (!response.ok) throw new Error(`NetEase search failed: ${response.status}`)
-
-    const payload = await response.json()
-    if (payload?.abroad && typeof payload.result === 'string') {
-      throw new Error('NetEase search is unavailable in this region')
-    }
-    if (!Array.isArray(payload?.result?.songs)) throw new Error('invalid NetEase search response')
-    return payload.result.songs.map(normalizeSong).filter(Boolean)
-  },
-
-  async resolve(id) {
-    if (!/^\d+$/.test(id)) throw new Error('invalid NetEase track id')
-    const url = new URL(mediaUrl)
-    url.searchParams.set('id', `${id}.mp3`)
-    return url.toString()
-  },
-})
+    async search(query, limit = 20, signal, page = 1) {
+      const body = new URLSearchParams({
+        s: query.trim(),
+        type: '1',
+        offset: String(Math.max(0, page - 1) * limit),
+        total: 'true',
+        limit: String(Math.min(50, Math.max(1, limit))),
+      })
+      const payload = await http.json(searchUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          Referer: 'https://music.163.com/',
+        },
+        body,
+        signal,
+        retryable: false,
+      })
+      if (payload?.abroad && typeof payload.result === 'string') {
+        throw new Error('NetEase search is unavailable in this region')
+      }
+      if (!Array.isArray(payload?.result?.songs)) throw new Error('invalid NetEase search response')
+      return payload.result.songs.map(normalizeSong).filter(Boolean)
+    },
+  }
+}

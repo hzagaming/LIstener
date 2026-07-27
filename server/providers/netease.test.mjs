@@ -36,7 +36,7 @@ test('normalizes NetEase search results into Track objects', async () => {
     cover: 'https://img.example/42.jpg',
     sourceUrl: 'https://music.163.com/#/song?id=42',
     quality: 'unknown',
-    capabilities: { playback: 'full', lyrics: false, download: false },
+    capabilities: { playback: 'none', lyrics: false, download: false },
   }])
 })
 
@@ -72,10 +72,8 @@ test('reports region-encrypted responses explicitly', async () => {
   await assert.rejects(() => provider.search('test', 10), /unavailable in this region/)
 })
 
-test('builds the public media URL for a resolved track', async () => {
+test('does not expose unverified playback resolution', () => {
   const provider = createNeteaseProvider({ fetchImpl: async () => Response.json({}) })
-  assert.equal(
-    await provider.resolve('42'),
-    'https://music.163.com/song/media/outer/url?id=42.mp3',
-  )
+  assert.equal(provider.capabilities.playback, false)
+  assert.equal(provider.resolve, undefined)
 })

@@ -40,11 +40,14 @@ test('normalizes Apple search results with playable previews', async () => {
   assert.equal(requestedUrl.searchParams.get('country'), 'CN')
 })
 
-test('filters results without a playable preview', async () => {
+test('keeps searchable metadata when a playable preview is unavailable', async () => {
   const provider = createAppleProvider({
     fetchImpl: async () => Response.json({ resultCount: 1, results: [{ ...song, previewUrl: undefined }] }),
   })
-  assert.deepEqual(await provider.search('test'), [])
+  const [result] = await provider.search('test')
+  assert.equal(result.id, '42')
+  assert.equal(result.audioUrl, '')
+  assert.deepEqual(result.capabilities, { playback: 'none', lyrics: false, download: false })
 })
 
 test('normalizes malformed and non-finite Apple durations to zero', async () => {

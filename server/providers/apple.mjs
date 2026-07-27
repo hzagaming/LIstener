@@ -1,3 +1,5 @@
+import { createProviderHttpClient } from '../providerHttpClient.mjs'
+
 const DEFAULT_SEARCH_URL = 'https://itunes.apple.com/search'
 const DEFAULT_LOOKUP_URL = 'https://itunes.apple.com/lookup'
 
@@ -30,29 +32,39 @@ export const createAppleProvider = ({
   lookupUrl = DEFAULT_LOOKUP_URL,
   country = 'CN',
   timeoutMs = 8_000,
+  responseLimitBytes = 2_097_152,
+  maxRetries = 1,
 } = {}) => {
+  const http = createProviderHttpClient({
+    allowedHosts: ['itunes.apple.com'],
+    fetchImpl,
+    timeoutMs,
+    maxResponseBytes: responseLimitBytes,
+    maxRetries,
+  })
   const request = async (url, signal) => {
-    const response = await fetchImpl(url, {
-      headers: { Accept: 'application/json', 'User-Agent': 'Listener/0.4.1 (+music metadata search)' },
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
-    })
-    if (!response.ok) throw new Error(`Apple music request failed: ${response.status}`)
-    const payload = await response.json()
+    const payload = await http.json(url, { signal })
     if (!Array.isArray(payload?.results)) throw new Error('invalid Apple search response')
     return payload.results
   }
 
   return {
     id: 'apple',
+    name: 'Apple Music',
+    enabled: true,
+    experimental: false,
+    official: true,
+    allowedHosts: ['itunes.apple.com'],
     capabilities: { search: true, playback: true, lyrics: false, download: false },
 
-    async search(query, limit = 20, signal) {
+    async search(query, limit = 20, signal, page = 1) {
       const url = new URL(searchUrl)
       url.searchParams.set('term', query.trim())
       url.searchParams.set('entity', 'song')
       url.searchParams.set('limit', String(Math.min(50, Math.max(1, limit))))
+      url.searchParams.set('offset', String(Math.max(0, page - 1) * limit))
       url.searchParams.set('country', country)
-      return (await request(url, signal)).map(normalizeSong).filter((track) => track?.audioUrl)
+      return (await request(url, signal)).map(normalizeSong).filter(Boolean)
     },
 
     async resolve(id, signal) {

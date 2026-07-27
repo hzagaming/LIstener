@@ -1,4 +1,5 @@
 import { createRequestScheduler } from './rateLimit.mjs'
+import { createProviderHttpClient, ProviderHttpError } from '../providerHttpClient.mjs'
 
 const DEFAULT_BASE_URL = 'https://api.audius.co/v1/'
 const audiusId = /^[A-Za-z0-9_-]{1,128}$/
@@ -77,6 +78,8 @@ export const createAudiusProvider = ({
   fetchImpl = globalThis.fetch,
   baseUrl = DEFAULT_BASE_URL,
   timeoutMs = 8_000,
+  responseLimitBytes = 2_097_152,
+  maxRetries = 1,
   minIntervalMs = 100,
   now = Date.now,
   waitImpl,
@@ -96,6 +99,13 @@ export const createAudiusProvider = ({
   endpoint.search = ''
   endpoint.hash = ''
   const schedule = createRequestScheduler({ minIntervalMs, now, waitImpl })
+  const http = createProviderHttpClient({
+    allowedHosts: ['api.audius.co'],
+    fetchImpl,
+    timeoutMs,
+    maxResponseBytes: responseLimitBytes,
+    maxRetries,
+  })
 
   const request = (url, signal, errorCodes = {}) => {
     const authenticatedUrl = new URL(url)
@@ -104,26 +114,18 @@ export const createAudiusProvider = ({
       ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
       : AbortSignal.timeout(timeoutMs)
     return schedule(async () => {
-      let response
       try {
-        response = await fetchImpl(authenticatedUrl, {
-          headers: { Accept: 'application/json' },
-          redirect: 'error',
-          signal: requestSignal,
-        })
-      } catch {
+        return await http.json(authenticatedUrl, { signal: requestSignal })
+      } catch (error) {
         if (requestSignal.aborted) throw requestSignal.reason
+        const errorCode = errorCodes[error?.status]
+        if (errorCode) {
+          throw Object.assign(new Error(`Audius request failed: ${error.status}`), { code: errorCode })
+        }
+        if (error instanceof ProviderHttpError && error.code === 'PROVIDER_INVALID_JSON') {
+          throw new Error('invalid Audius response')
+        }
         throw new Error('Audius request failed')
-      }
-      const errorCode = errorCodes[response.status]
-      if (errorCode) {
-        throw Object.assign(new Error(`Audius request failed: ${response.status}`), { code: errorCode })
-      }
-      if (!response.ok) throw new Error(`Audius request failed: ${response.status}`)
-      try {
-        return await response.json()
-      } catch {
-        throw new Error('invalid Audius response')
       }
     }, requestSignal)
   }
@@ -141,15 +143,20 @@ export const createAudiusProvider = ({
 
   return {
     id: 'audius',
+    name: 'Audius',
+    enabled: true,
+    experimental: false,
+    official: true,
+    allowedHosts: ['api.audius.co'],
     capabilities: { search: true, playback: true, lyrics: false, download: false },
 
-    async search(query, limit = 20, signal) {
+    async search(query, limit = 20, signal, page = 1) {
       const value = query.trim()
       if (!value) return []
       const url = new URL('tracks/search', endpoint)
       url.searchParams.set('query', value)
       url.searchParams.set('limit', String(Math.min(50, Math.max(1, limit))))
-      url.searchParams.set('offset', '0')
+      url.searchParams.set('offset', String(Math.max(0, page - 1) * limit))
       const payload = await request(url, signal)
       if (!Array.isArray(payload?.data)) throw new Error('invalid Audius response')
       return payload.data.map((track) => normalizeTrack(track, normalizedKey)).filter(Boolean)

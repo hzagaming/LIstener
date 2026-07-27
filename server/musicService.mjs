@@ -31,6 +31,18 @@ const isTrack = (track) => track && typeof track === 'object'
   && typeof track.capabilities.lyrics === 'boolean'
   && typeof track.capabilities.download === 'boolean'
 
+const resolvedMediaUrl = (value) => {
+  if (typeof value !== 'string') return null
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
+      ? url.toString()
+      : null
+  } catch {
+    return null
+  }
+}
+
 const abortReason = (signal) => signal?.reason ?? new Error('operation aborted')
 
 const withTimeout = (operation, timeoutMs, externalSignal) => new Promise((resolve, reject) => {
@@ -144,10 +156,7 @@ export const createMusicService = ({
           return []
         }
         const valid = result.value.filter((track) => isTrack(track) && track.source === providers[index].id)
-        if (result.value.length && !valid.length) {
-          hasProviderFailure = true
-          return []
-        }
+        if (valid.length !== result.value.length) hasProviderFailure = true
         return [valid]
       })
       if (!providerTracks.length || (hasProviderFailure && providerTracks.every((tracks) => !tracks.length))) {
@@ -170,14 +179,16 @@ export const createMusicService = ({
         }
         if (!progressed) break
       }
-      const timestamp = now()
-      if (cache.size >= maxCacheEntries) {
-        for (const [cachedKey, value] of cache) {
-          if (value.expiresAt <= timestamp) cache.delete(cachedKey)
+      if (!hasProviderFailure) {
+        const timestamp = now()
+        if (cache.size >= maxCacheEntries) {
+          for (const [cachedKey, value] of cache) {
+            if (value.expiresAt <= timestamp) cache.delete(cachedKey)
+          }
+          if (cache.size >= maxCacheEntries) cache.delete(cache.keys().next().value)
         }
-        if (cache.size >= maxCacheEntries) cache.delete(cache.keys().next().value)
+        cache.set(key, { tracks, expiresAt: timestamp + ttlMs })
       }
-      cache.set(key, { tracks, expiresAt: timestamp + ttlMs })
       return tracks
     })().finally(() => {
       entry.settled = true
@@ -193,34 +204,58 @@ export const createMusicService = ({
     if (typeof provider.resolve !== 'function' || provider.capabilities?.playback === false) {
       throw new Error('playback is unavailable for this source')
     }
-    return withTimeout((providerSignal) => provider.resolve(id, providerSignal), providerTimeoutMs, signal)
+    const url = resolvedMediaUrl(await withTimeout(
+      (providerSignal) => provider.resolve(id, providerSignal),
+      providerTimeoutMs,
+      signal,
+    ))
+    if (!url) throw new Error('invalid resolved media URL')
+    return url
   }
 
-  const lyrics = async (source, id) => {
+  const lyrics = async (source, id, signal) => {
     const provider = getProvider(providerById, source)
     if (!provider.capabilities?.lyrics || typeof provider.lyrics !== 'function') {
       throw new Error('lyrics are unavailable for this source')
     }
-    return withTimeout((signal) => provider.lyrics(id, signal), providerTimeoutMs)
+    const value = await withTimeout(
+      (providerSignal) => provider.lyrics(id, providerSignal),
+      providerTimeoutMs,
+      signal,
+    )
+    if (typeof value?.plain !== 'string' || typeof value?.lrc !== 'string') {
+      throw new Error('invalid lyrics response')
+    }
+    return value
   }
 
-  const lookup = async (source, id) => {
+  const lookup = async (source, id, signal) => {
     const provider = getProvider(providerById, source)
     if (typeof provider.lookup !== 'function') throw new Error('track lookup is unavailable for this source')
-    return withTimeout((signal) => provider.lookup(id, signal), providerTimeoutMs)
+    const track = await withTimeout(
+      (providerSignal) => provider.lookup(id, providerSignal),
+      providerTimeoutMs,
+      signal,
+    )
+    if (!isTrack(track) || track.source !== source) throw new Error('invalid provider track')
+    return track
   }
 
-  const download = async (source, id) => {
+  const download = async (source, id, signal) => {
     const provider = getProvider(providerById, source)
     if (!provider.capabilities?.download || typeof provider.download !== 'function') {
       throw new Error('download is unavailable for this source')
     }
-    const descriptor = await withTimeout((signal) => provider.download(id, signal), providerTimeoutMs)
-    const url = new URL(descriptor?.url)
-    if (!['http:', 'https:'].includes(url.protocol) || !descriptor?.filename) {
+    const descriptor = await withTimeout(
+      (providerSignal) => provider.download(id, providerSignal),
+      providerTimeoutMs,
+      signal,
+    )
+    const url = resolvedMediaUrl(descriptor?.url)
+    if (!url || !descriptor?.filename) {
       throw new Error('invalid download descriptor')
     }
-    return { url: url.toString(), filename: String(descriptor.filename).replace(/[\\/:*?"<>|]/g, '_').slice(0, 200) }
+    return { url, filename: String(descriptor.filename).replace(/[\\/:*?"<>|]/g, '_').slice(0, 200) }
   }
 
   return {

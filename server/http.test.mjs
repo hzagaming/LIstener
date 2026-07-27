@@ -124,6 +124,43 @@ test('aborts a resolve subscription when its client disconnects', async () => {
   })
 })
 
+test('aborts lookup, lyrics, and download when their client disconnects', async () => {
+  for (const [method, path] of [
+    ['lookup', '/api/track?source=apple&id=1'],
+    ['lyrics', '/api/lyrics?source=apple&id=1'],
+    ['download', '/api/download?source=apple&id=1'],
+  ]) {
+    let markStarted
+    let markAborted
+    let release
+    const started = new Promise((resolve) => { markStarted = resolve })
+    const aborted = new Promise((resolve) => { markAborted = resolve })
+    const service = {
+      [method](_source, _id, signal) {
+        markStarted()
+        signal?.addEventListener('abort', markAborted, { once: true })
+        return new Promise((resolve) => { release = resolve })
+      },
+    }
+
+    await withServer(createApiHandler({ service }), async (baseUrl) => {
+      const client = requestHttp(`${baseUrl}${path}`)
+      client.on('error', () => {})
+      client.end()
+      await started
+      client.destroy()
+      const wasAborted = await Promise.race([
+        aborted.then(() => true),
+        new Promise((resolve) => setTimeout(() => resolve(false), 20)),
+      ])
+      release(method === 'lookup'
+        ? { id: '1' }
+        : method === 'lyrics' ? { plain: '', lrc: '' } : { url: 'https://example.com/1', filename: '1.mp3' })
+      assert.equal(wasAborted, true)
+    })
+  }
+})
+
 test('validates requests and returns JSON errors', async () => {
   const service = { search: async () => [], resolve: async () => '', identify: () => null }
 

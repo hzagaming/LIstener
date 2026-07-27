@@ -236,6 +236,77 @@ test('bounds slow providers and still returns results from healthy sources', asy
   assert.equal(aborted, true)
 })
 
+test('does not cache partial results while a provider is unavailable', async () => {
+  let healthyCalls = 0
+  let recoveringCalls = 0
+  const service = createMusicService({
+    providers: [
+      {
+        id: 'healthy',
+        search: async () => { healthyCalls += 1; return [{ ...track('1'), source: 'healthy' }] },
+      },
+      {
+        id: 'recovering',
+        search: async () => {
+          recoveringCalls += 1
+          if (recoveringCalls === 1) throw new Error('temporary outage')
+          return [{ ...track('2'), source: 'recovering' }]
+        },
+      },
+    ],
+  })
+
+  assert.deepEqual((await service.search('song')).map(({ source }) => source), ['healthy'])
+  assert.deepEqual((await service.search('song')).map(({ source }) => source), ['healthy', 'recovering'])
+  assert.equal(healthyCalls, 2)
+  assert.equal(recoveringCalls, 2)
+})
+
+test('does not evict healthy cache entries for partial results', async () => {
+  let healthyCalls = 0
+  const service = createMusicService({
+    maxCacheEntries: 1,
+    providers: [
+      {
+        id: 'healthy',
+        search: async (query) => {
+          healthyCalls += 1
+          return [{ ...track(query), source: 'healthy' }]
+        },
+      },
+      {
+        id: 'unstable',
+        search: async (query) => {
+          if (query === 'partial') throw new Error('temporary outage')
+          return []
+        },
+      },
+    ],
+  })
+
+  await service.search('stable')
+  await service.search('partial')
+  await service.search('stable')
+  assert.equal(healthyCalls, 2)
+})
+
+test('does not cache mixed valid and malformed provider results', async () => {
+  let calls = 0
+  const service = createMusicService({
+    providers: [{
+      id: 'mixed',
+      search: async () => {
+        calls += 1
+        return [{ ...track('1'), source: 'mixed' }, { id: 'malformed' }]
+      },
+    }],
+  })
+
+  await service.search('song')
+  await service.search('song')
+  assert.equal(calls, 2)
+})
+
 test('isolates invalid fulfilled provider search outputs', async () => {
   const service = createMusicService({
     providers: [
@@ -285,6 +356,62 @@ test('times out every non-search provider operation and passes its abort signal'
   }
   assert.equal(signals.length, 4)
   assert.equal(signals.every((signal) => signal instanceof AbortSignal && signal.aborted), true)
+})
+
+test('cancels lookup, lyrics, and download with the caller signal', async () => {
+  const signals = []
+  const never = (_id, signal) => {
+    signals.push(signal)
+    return new Promise(() => {})
+  }
+  const service = createMusicService({
+    providerTimeoutMs: 1_000,
+    providers: [{
+      id: 'slow',
+      capabilities: { search: true, playback: true, lyrics: true, download: true },
+      search: async () => [],
+      lookup: never,
+      lyrics: never,
+      download: never,
+    }],
+  })
+
+  for (const operation of [service.lookup, service.lyrics, service.download]) {
+    const controller = new AbortController()
+    const pending = operation('slow', '7', controller.signal)
+    await new Promise((resolve) => setImmediate(resolve))
+    controller.abort(new Error('client cancelled'))
+    await assert.rejects(() => Promise.race([
+      pending,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('test guard expired')), 50)),
+    ]), /client cancelled/)
+  }
+  assert.equal(signals.length, 3)
+  assert.equal(signals.every((signal) => signal.aborted), true)
+})
+
+test('validates resolved URLs and looked-up tracks at the service boundary', async () => {
+  const invalidUrl = createMusicService({
+    providers: [{ id: 'unsafe', search: async () => [], resolve: async () => 'javascript:alert(1)' }],
+  })
+  await assert.rejects(() => invalidUrl.resolve('unsafe', '1'), /invalid resolved media URL/)
+
+  const invalidTrack = createMusicService({
+    providers: [{ id: 'safe', search: async () => [], lookup: async () => ({ ...track('1'), source: 'spoofed' }) }],
+  })
+  await assert.rejects(() => invalidTrack.lookup('safe', '1'), /invalid provider track/)
+})
+
+test('rejects malformed download descriptors consistently', async () => {
+  const service = createMusicService({
+    providers: [{
+      id: 'download',
+      capabilities: { download: true },
+      download: async () => ({ url: 'not a URL', filename: 'track.mp3' }),
+    }],
+  })
+
+  await assert.rejects(() => service.download('download', '1'), /invalid download descriptor/)
 })
 
 test('keeps lyrics and download disabled unless explicitly declared', async () => {

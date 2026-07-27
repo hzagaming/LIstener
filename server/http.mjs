@@ -17,6 +17,20 @@ export const createApiHandler = ({
   now = Date.now,
 }) => {
   const clients = new Map()
+  const runAbortable = async (request, response, operation) => {
+    const controller = new AbortController()
+    const abort = () => controller.abort(new Error('client disconnected'))
+    const handleClose = () => { if (!response.writableEnded) abort() }
+    request.once('aborted', abort)
+    response.once('close', handleClose)
+    try {
+      const value = await operation(controller.signal)
+      return controller.signal.aborted || response.destroyed ? null : { value }
+    } finally {
+      request.removeListener('aborted', abort)
+      response.removeListener('close', handleClose)
+    }
+  }
 
   return async (request, response) => {
     const corsHeaders = {
@@ -73,21 +87,9 @@ export const createApiHandler = ({
         if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
           return writeJson(response, 400, errorPayload('INVALID_LIMIT', 'limit must be between 1 and 50'), corsHeaders)
         }
-        const controller = new AbortController()
-        const abortSearch = () => controller.abort(new Error('search client disconnected'))
-        const handleResponseClose = () => {
-          if (!response.writableEnded) abortSearch()
-        }
-        request.once('aborted', abortSearch)
-        response.once('close', handleResponseClose)
-        try {
-          const tracks = await service.search(query, limit, controller.signal)
-          if (controller.signal.aborted || response.destroyed) return
-          return writeJson(response, 200, { tracks }, corsHeaders)
-        } finally {
-          request.removeListener('aborted', abortSearch)
-          response.removeListener('close', handleResponseClose)
-        }
+        const result = await runAbortable(request, response, (signal) => service.search(query, limit, signal))
+        if (!result) return
+        return writeJson(response, 200, { tracks: result.value }, corsHeaders)
       }
       if (url.pathname === '/api/resolve') {
         const source = url.searchParams.get('source')?.trim()
@@ -95,21 +97,9 @@ export const createApiHandler = ({
         if (!source || !id) {
           return writeJson(response, 400, errorPayload('INVALID_TRACK', 'source and id are required'), corsHeaders)
         }
-        const controller = new AbortController()
-        const abortResolve = () => controller.abort(new Error('resolve client disconnected'))
-        const handleResponseClose = () => {
-          if (!response.writableEnded) abortResolve()
-        }
-        request.once('aborted', abortResolve)
-        response.once('close', handleResponseClose)
-        try {
-          const audioUrl = await service.resolve(source, id, controller.signal)
-          if (controller.signal.aborted || response.destroyed) return
-          return writeJson(response, 200, { url: audioUrl }, corsHeaders)
-        } finally {
-          request.removeListener('aborted', abortResolve)
-          response.removeListener('close', handleResponseClose)
-        }
+        const result = await runAbortable(request, response, (signal) => service.resolve(source, id, signal))
+        if (!result) return
+        return writeJson(response, 200, { url: result.value }, corsHeaders)
       }
       if (url.pathname === '/api/identify') {
         const input = url.searchParams.get('input')?.trim()
@@ -125,10 +115,11 @@ export const createApiHandler = ({
         if (!source || !id) {
           return writeJson(response, 400, errorPayload('INVALID_TRACK', 'source and id are required'), corsHeaders)
         }
-        if (url.pathname === '/api/lyrics') {
-          return writeJson(response, 200, await service.lyrics(source, id), corsHeaders)
-        }
-        return writeJson(response, 200, await service.download(source, id), corsHeaders)
+        const result = await runAbortable(request, response, (signal) => url.pathname === '/api/lyrics'
+          ? service.lyrics(source, id, signal)
+          : service.download(source, id, signal))
+        if (!result) return
+        return writeJson(response, 200, result.value, corsHeaders)
       }
       if (url.pathname === '/api/track') {
         const source = url.searchParams.get('source')?.trim()
@@ -136,7 +127,9 @@ export const createApiHandler = ({
         if (!source || !id) {
           return writeJson(response, 400, errorPayload('INVALID_TRACK', 'source and id are required'), corsHeaders)
         }
-        return writeJson(response, 200, { track: await service.lookup(source, id) }, corsHeaders)
+        const result = await runAbortable(request, response, (signal) => service.lookup(source, id, signal))
+        if (!result) return
+        return writeJson(response, 200, { track: result.value }, corsHeaders)
       }
       return writeJson(response, 404, errorPayload('NOT_FOUND', 'route not found'), corsHeaders)
     } catch (error) {

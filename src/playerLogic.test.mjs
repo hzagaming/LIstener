@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   endedPlaybackAction, initialPlaybackDuration, mediaLoadKey, playableTracks, playbackVisualState,
-  preferResolvedCurrent, removalFocusIndex, seekPosition,
+  playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition, shouldCancelPendingTrack,
 } from './playerLogic.mjs'
 
 const track = (id, playback = 'full', audioUrl = '') => ({
@@ -70,4 +70,16 @@ test('waits for preview metadata before exposing its playable duration', () => {
   assert.equal(initialPlaybackDuration({ duration: 370, capabilities: { playback: 'preview' } }), 0)
   assert.equal(initialPlaybackDuration({ duration: 370, capabilities: { playback: 'full' } }), 370)
   assert.equal(initialPlaybackDuration({ duration: 370, capabilities: { playback: 'none' } }), 0)
+})
+
+test('keeps a pending playback control available so loading can be cancelled', () => {
+  assert.equal(playControlDisabled('none', false), true)
+  assert.equal(playControlDisabled('none', true), false)
+  assert.equal(playControlDisabled('preview', false), false)
+})
+
+test('only cancels when the selected track owns the pending request', () => {
+  assert.equal(shouldCancelPendingTrack('apple:1', 'apple:1'), true)
+  assert.equal(shouldCancelPendingTrack('apple:2', 'apple:1'), false)
+  assert.equal(shouldCancelPendingTrack('apple:1', null), false)
 })

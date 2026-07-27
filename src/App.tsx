@@ -8,9 +8,9 @@ import {
 import { playlists, tracks as initialTracks } from './data/catalog'
 import {
   endedPlaybackAction, initialPlaybackDuration, mediaLoadKey, playableTracks, playbackVisualState,
-  preferResolvedCurrent, removalFocusIndex, seekPosition,
+  playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition, shouldCancelPendingTrack,
 } from './playerLogic.mjs'
-import { searchFallbackTracks } from './searchLogic.mjs'
+import { searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
 import { musicProvider, sourceLabel } from './services/musicProvider'
 import { isPlaylist, isTrack, musicSources, trackKey } from './types/music'
 import type { MusicIdentification, MusicSource, Playlist, ProviderStatus, Track } from './types/music'
@@ -131,13 +131,13 @@ function TrackRow({
   const playLabel = playbackUnavailable
     ? `无法播放 ${track.title}`
     : visualState === 'resolving'
-      ? `正在连接 ${track.title}`
+      ? `取消加载 ${track.title}`
       : visualState === 'buffering'
         ? `正在缓冲 ${track.title}，点击暂停`
         : visualState === 'playing' ? `暂停 ${track.title}` : `播放 ${track.title}`
   return (
     <div className={`track-row ${current ? 'track-row--current' : ''}`} role="listitem">
-      <button className="track-row__play" aria-label={playLabel} title={playbackUnavailable ? '来源未提供可播放音源' : undefined} aria-busy={loading} aria-pressed={visualState === 'playing'} disabled={playbackUnavailable || pending} onClick={onPlay}>
+      <button className="track-row__play" aria-label={playLabel} title={playbackUnavailable ? '来源未提供可播放音源' : undefined} aria-busy={loading} aria-pressed={visualState === 'playing'} disabled={playControlDisabled(track.capabilities.playback, Boolean(pending))} onClick={onPlay}>
         <span>{String(index + 1).padStart(2, '0')}</span>{loading ? <LoaderCircle className="spin" /> : visualState === 'playing' ? <Pause /> : <Play fill="currentColor" />}
       </button>
       <Cover name={track.cover} size="small" />
@@ -417,19 +417,21 @@ function App() {
     if (isPlaying) attemptPlayback(audio)
   }, [current]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const inputMode = searchInputMode(query)
+
   useEffect(() => {
     let active = true
     const controller = new AbortController()
     const requestId = ++searchRequestRef.current
     const trimmed = query.trim()
     setSearchDegraded(false)
-    if (!trimmed) {
+    if (inputMode === 'empty') {
       setResults(initialTracks)
       setResultQuery('')
       setIsSearching(false)
       return () => controller.abort()
     }
-    if (/^https?:\/\//i.test(trimmed) || trimmed.length > 100) {
+    if (inputMode !== 'search') {
       setResults([])
       setResultQuery(trimmed)
       setIsSearching(false)
@@ -526,6 +528,11 @@ function App() {
   }
 
   const resolveAndPlay = async (track: Track, list?: Track[], mode: PlayMode = 'toggle') => {
+    if (shouldCancelPendingTrack(trackKey(track), pendingTrackKeyRef.current)) {
+      cancelPendingPlay()
+      showNotice('已取消加载')
+      return
+    }
     const target = preferResolvedCurrent(track, current)
     if (target.capabilities.playback === 'none') return showNotice('该来源没有可用音源')
     resolveControllerRef.current?.abort()
@@ -1040,7 +1047,7 @@ function App() {
         </div>
       </aside>
 
-      {mobileNavOpen && <button className="scrim" onClick={closeMobileNav} aria-label="关闭菜单" />}
+      {mobileNavOpen && <button className="scrim" tabIndex={-1} onClick={closeMobileNav} aria-label="关闭菜单" />}
 
       <main className="main-content" {...(queueOpen || mobileNavOpen || dialogOpen ? { inert: '' } : {})}>
         <header className="topbar">
@@ -1051,7 +1058,7 @@ function App() {
             <kbd>⌘/Ctrl K</kbd>
           </button>
           <div className="topbar__actions">
-            <div className="source-selector"><span className={`status-dot ${providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`} />{providerChecking ? '正在连接' : providerStatus.online ? '聚合服务在线' : '演示模式'}</div>
+            <div className="source-selector" role="status" aria-live="polite"><span className={`status-dot ${providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`} />{providerChecking ? '正在连接' : providerStatus.online ? '聚合服务在线' : '演示模式'}</div>
             <div className="avatar" aria-hidden="true">L</div>
           </div>
         </header>
@@ -1095,7 +1102,7 @@ function App() {
                   return (
                   <article className={`track-card ${isCurrent ? 'track-card--current' : ''}`} key={key}>
                     <div className="track-card__number">0{index + 1}</div>
-                    <button className="track-card__cover" disabled={isPending} aria-busy={loading} aria-pressed={visualState === 'playing'} onClick={() => void resolveAndPlay(track, initialTracks)} aria-label={visualState === 'resolving' ? `正在连接 ${track.title}` : visualState === 'buffering' ? `正在缓冲 ${track.title}，点击暂停` : visualState === 'playing' ? `暂停 ${track.title}` : `播放 ${track.title}`}>
+                    <button className="track-card__cover" disabled={playControlDisabled(track.capabilities.playback, isPending)} aria-busy={loading} aria-pressed={visualState === 'playing'} onClick={() => void resolveAndPlay(track, initialTracks)} aria-label={visualState === 'resolving' ? `取消加载 ${track.title}` : visualState === 'buffering' ? `正在缓冲 ${track.title}，点击暂停` : visualState === 'playing' ? `暂停 ${track.title}` : `播放 ${track.title}`}>
                       <Cover name={track.cover} />
                       <span className="cover-play">{loading ? <LoaderCircle className="spin" /> : visualState === 'playing' ? <Pause /> : <Play fill="currentColor" />}</span>
                     </button>
@@ -1138,16 +1145,17 @@ function App() {
               <h1>多平台搜索</h1>
               <div className="search-input-wrap">
                 <Search aria-hidden="true" />
-                <input id="search-input" aria-label="搜索歌曲、歌手、专辑、音乐地址或 ID" maxLength={2048} value={query} onChange={(event) => updateQuery(event.target.value)} placeholder="歌曲、歌手、专辑、音乐地址或 ID……" />
+                <input id="search-input" aria-label="搜索歌曲、歌手、专辑、音乐地址或 ID" aria-invalid={inputMode === 'too-long'} aria-describedby={inputMode === 'too-long' ? 'search-input-error search-guidance' : 'search-guidance'} maxLength={2048} value={query} onChange={(event) => updateQuery(event.target.value)} placeholder="歌曲、歌手、专辑、音乐地址或 ID……" />
                 {query && <button onClick={() => updateQuery('')} aria-label="清空"><X /></button>}
               </div>
               <div className="search-hints"><span>试试：</span>{['周杰伦', '久石譲', 'Golden Hour'].map((word) => <button key={word} onClick={() => updateQuery(word)}>{word}</button>)}</div>
+              {inputMode === 'too-long' && <div id="search-input-error" className="search-input-error" role="alert">搜索关键词最多 100 个字符；如果粘贴的是音乐地址，请保留完整的 http:// 或 https:// 前缀。</div>}
               <div className="id-resolver">
                 <select aria-label="音乐 ID 所属平台" value={identifySource} onChange={(event) => updateIdentifySource(event.target.value as MusicSource)}>
                   {musicSources.filter((source) => source !== 'demo' && source !== 'local').map((source) => <option key={source} value={source}>{sourceLabel(source)}</option>)}
                 </select>
                 <button className="primary-button" disabled={isIdentifying} onClick={() => void identifyInput()}>{isIdentifying ? '正在识别…' : '解析地址 / ID'}</button>
-                <span>平台地址与纯 ID 均需点击解析；纯 ID 请先选择平台。</span>
+                <span id="search-guidance">平台地址与纯 ID 均需点击解析；纯 ID 请先选择平台。</span>
               </div>
               {identification && (
                 <div className="identification" role="status">
@@ -1183,7 +1191,7 @@ function App() {
                     onLyrics={() => void openLyrics(track)}
                     onDownload={() => void downloadTrack(track)}
                   />
-                )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : searchDegraded ? '聚合服务暂不可用' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : searchDegraded ? '演示曲库里也没有匹配结果，请稍后重试真实搜索。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
+                )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : inputMode === 'too-long' ? '搜索词太长' : searchDegraded ? '聚合服务暂不可用' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : inputMode === 'too-long' ? '请缩短到 100 个字符以内，再重新搜索。' : searchDegraded ? '演示曲库里也没有匹配结果，请稍后重试真实搜索。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
               </div>
             </section>
           </div>
@@ -1313,7 +1321,7 @@ function App() {
               {!queue.length && <div className="compact-empty"><ListMusic /><span>播放队列为空</span></div>}
             </div>
           </aside>
-          <button className="queue-scrim" onClick={closeQueue} aria-label="关闭播放队列" />
+          <button className="queue-scrim" tabIndex={-1} onClick={closeQueue} aria-label="关闭播放队列" />
         </>
       )}
 
@@ -1332,7 +1340,7 @@ function App() {
               <button className="primary-button" type="submit"><Plus />{playlistModalTrack ? '创建并加入' : '创建歌单'}</button>
             </form>
           </section>
-          <button className="dialog-scrim" onClick={closeDialog} aria-label="关闭歌单窗口" />
+          <button className="dialog-scrim" tabIndex={-1} onClick={closeDialog} aria-label="关闭歌单窗口" />
         </>
       )}
 
@@ -1343,7 +1351,7 @@ function App() {
             <span className="visually-hidden" role="status" aria-live="polite">{lyricsLoading ? '正在加载歌词' : '歌词已加载'}</span>
             <pre className="lyrics-content">{lyricsLoading ? '正在加载歌词…' : lyricsText}</pre>
           </section>
-          <button className="dialog-scrim" onClick={closeDialog} aria-label="关闭歌词" />
+          <button className="dialog-scrim" tabIndex={-1} onClick={closeDialog} aria-label="关闭歌词" />
         </>
       )}
 
@@ -1353,6 +1361,7 @@ function App() {
           ref={audioRef}
           src={current.audioUrl || undefined}
           preload="metadata"
+          playsInline
           onPlay={(event) => { if (isCurrentAudio(event.currentTarget)) setIsPlaying(true) }}
           onPlaying={(event) => { if (isCurrentAudio(event.currentTarget)) setIsBuffering(false) }}
           onWaiting={(event) => { if (isCurrentAudio(event.currentTarget) && !event.currentTarget.paused) setIsBuffering(true) }}
@@ -1370,9 +1379,9 @@ function App() {
           onEnded={(event) => { if (isCurrentAudio(event.currentTarget)) handleEnded() }}
           onError={(event) => { if (isCurrentAudio(event.currentTarget)) handleAudioError() }}
         />
-        <div className="player__track"><Cover name={current.cover} size="small" /><div><strong>{current.title}</strong><span><b className="player__state" aria-live="polite">{playerStateLabel}{playerStateLabel ? ' · ' : ''}</b>{current.artist} · {sourceLabel(current.source)} · {qualityLabels[current.quality]}{current.capabilities.playback === 'preview' ? '试听' : ''}</span></div><button aria-label={`${liked.has(currentKey) ? '取消收藏' : '收藏'} ${current.title}`} className={`like-button ${liked.has(currentKey) ? 'liked' : ''}`} onClick={() => toggleLike(current)}><Heart fill={liked.has(currentKey) ? 'currentColor' : 'none'} /></button></div>
+        <div className="player__track"><Cover name={current.cover} size="small" /><div><strong>{current.title}</strong><span><b className="player__state" aria-live="polite">{playerStateLabel}{playerStateLabel ? ' · ' : ''}</b>{current.artist} · {sourceLabel(current.source)} · {qualityLabels[current.quality]}{current.capabilities.playback === 'preview' ? ' · 试听' : current.capabilities.playback === 'none' ? ' · 不可播放' : ''}</span></div><button aria-label={`${liked.has(currentKey) ? '取消收藏' : '收藏'} ${current.title}`} className={`like-button ${liked.has(currentKey) ? 'liked' : ''}`} onClick={() => toggleLike(current)}><Heart fill={liked.has(currentKey) ? 'currentColor' : 'none'} /></button></div>
         <div className="player__center">
-          <div className="player__controls"><button aria-label="随机播放" disabled={queue.length < 2} onClick={shuffle}><Shuffle /></button><button aria-label="上一首" disabled={!queue.length} onClick={() => skip(-1)}><SkipBack fill="currentColor" /></button><button className="play-main" aria-label={current.capabilities.playback === 'none' ? '当前歌曲无法播放' : playerVisualState === 'resolving' ? '取消加载' : playerVisualState === 'buffering' ? '暂停缓冲' : playerVisualState === 'playing' ? '暂停' : '播放'} aria-busy={playerLoading} disabled={current.capabilities.playback === 'none'} onClick={togglePlay}>{playerLoading ? <LoaderCircle className="spin" /> : playerVisualState === 'playing' ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button><button aria-label="下一首" disabled={!queue.length} onClick={() => skip(1)}><SkipForward fill="currentColor" /></button><button className={repeatMode === 'off' ? '' : 'active'} aria-label={`循环模式：${repeatMode === 'off' ? '关闭' : repeatMode === 'all' ? '列表循环' : '单曲循环'}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeat}>{repeatMode === 'one' ? <Repeat1 /> : <Repeat />}</button><button aria-label="播放队列" onClick={openQueue}><ListMusic /></button></div>
+          <div className="player__controls"><button aria-label="随机播放" disabled={queue.length < 2} onClick={shuffle}><Shuffle /></button><button aria-label="上一首" disabled={!queue.length} onClick={() => skip(-1)}><SkipBack fill="currentColor" /></button><button className="play-main" aria-label={playerVisualState === 'resolving' ? '取消加载' : current.capabilities.playback === 'none' ? '当前歌曲无法播放' : playerVisualState === 'buffering' ? '暂停缓冲' : playerVisualState === 'playing' ? '暂停' : '播放'} aria-busy={playerLoading} disabled={playControlDisabled(current.capabilities.playback, Boolean(pendingTrackKey))} onClick={togglePlay}>{playerLoading ? <LoaderCircle className="spin" /> : playerVisualState === 'playing' ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button><button aria-label="下一首" disabled={!queue.length} onClick={() => skip(1)}><SkipForward fill="currentColor" /></button><button className={repeatMode === 'off' ? '' : 'active'} aria-label={`循环模式：${repeatMode === 'off' ? '关闭' : repeatMode === 'all' ? '列表循环' : '单曲循环'}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeat}>{repeatMode === 'one' ? <Repeat1 /> : <Repeat />}</button><button aria-label="播放队列" onClick={openQueue}><ListMusic /></button></div>
           <div className="player__progress"><span>{formatTime(seekProgress)}</span><input aria-label="播放进度" aria-valuetext={`${formatTime(seekProgress)} / ${formatTime(seekDuration)}`} disabled={!seekDuration} type="range" min="0" max={seekDuration || 1} step="0.1" value={seekProgress} style={{ '--progress': `${seekDuration ? (seekProgress / seekDuration) * 100 : 0}%` } as React.CSSProperties} onChange={(event) => seekTo(Number(event.target.value))} /><span>{formatTime(seekDuration)}</span></div>
         </div>
         <div className="player__tools"><button aria-label={`将 ${current.title} 加入歌单`} onClick={() => openPlaylistDialog(current)}><ListPlus /></button><button className={current.capabilities.lyrics ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.lyrics} aria-label={current.capabilities.lyrics ? `查看 ${current.title} 的歌词` : `${current.title} 的歌词不可用`} onClick={() => void openLyrics(current)}><FileText /></button><button className={current.capabilities.download ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.download} aria-label={current.capabilities.download ? `下载 ${current.title}` : `${current.title} 不可下载`} onClick={() => void downloadTrack(current)}><Download /></button><button className="volume-button" aria-label={volume > 0 ? '静音' : '取消静音'} aria-pressed={volume === 0} onClick={toggleMute}>{volume > 0 ? <Volume2 /> : <VolumeX />}</button><input aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} type="range" min="0" max="1" step="0.01" value={volume} style={{ '--progress': `${volume * 100}%` } as React.CSSProperties} onChange={(event) => setVolume(Number(event.target.value))} /></div>

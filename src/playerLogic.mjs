@@ -27,6 +27,12 @@ export const playbackVisualState = ({ current, playing, resolving, buffering }) 
   return playing ? 'playing' : 'idle'
 }
 
+export const playControlDisabled = (playback, pending) => playback === 'none' && !pending
+
+export const shouldCancelPendingTrack = (requestedKey, pendingKey) => (
+  Boolean(pendingKey) && requestedKey === pendingKey
+)
+
 export const seekPosition = (value, duration) => (
   Number.isFinite(value) && Number.isFinite(duration) && duration > 0
     ? Math.min(duration, Math.max(0, value))

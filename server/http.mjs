@@ -218,7 +218,6 @@ export const createApiHandler = ({
         const source = url.searchParams.get('source')?.trim()
         if (!input) return writeJson(response, 400, errorPayload('INVALID_INPUT', 'input is required'), corsHeaders)
         const match = service.identify(input, source)
-        if (!match) return writeJson(response, 404, errorPayload('UNRECOGNIZED_INPUT', 'music input was not recognized'), corsHeaders)
         return writeJson(response, 200, { match }, corsHeaders)
       }
       if (url.pathname === '/api/lyrics' || url.pathname === '/api/download') {

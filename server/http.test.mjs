@@ -176,7 +176,8 @@ test('validates requests and returns JSON errors', async () => {
     assert.equal(missingInput.status, 400)
 
     const invalidInput = await fetch(`${baseUrl}/api/identify?input=not-a-track`)
-    assert.equal(invalidInput.status, 404)
+    assert.equal(invalidInput.status, 200)
+    assert.deepEqual(await invalidInput.json(), { match: null })
 
     const missingLyrics = await fetch(`${baseUrl}/api/lyrics?source=netease`)
     assert.equal(missingLyrics.status, 400)

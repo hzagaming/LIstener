@@ -33,6 +33,11 @@ export const shouldCancelPendingTrack = (requestedKey, pendingKey) => (
   Boolean(pendingKey) && requestedKey === pendingKey
 )
 
+export const shouldRestartCurrentTrack = (progress, currentIndex, duration) => (
+  currentIndex >= 0 && Number.isFinite(progress) && progress > 3
+    && Number.isFinite(duration) && duration > 0
+)
+
 export const seekPosition = (value, duration) => (
   Number.isFinite(value) && Number.isFinite(duration) && duration > 0
     ? Math.min(duration, Math.max(0, value))

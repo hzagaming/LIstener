@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   endedPlaybackAction, initialPlaybackDuration, mediaLoadKey, playableTracks, playbackVisualState,
   playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition, shouldCancelPendingTrack,
+  shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 
 const track = (id, playback = 'full', audioUrl = '') => ({
@@ -82,4 +83,12 @@ test('only cancels when the selected track owns the pending request', () => {
   assert.equal(shouldCancelPendingTrack('apple:1', 'apple:1'), true)
   assert.equal(shouldCancelPendingTrack('apple:2', 'apple:1'), false)
   assert.equal(shouldCancelPendingTrack('apple:1', null), false)
+})
+
+test('restarts the current track before moving to the previous one', () => {
+  assert.equal(shouldRestartCurrentTrack(3.01, 0, 120), true)
+  assert.equal(shouldRestartCurrentTrack(3, 0, 120), false)
+  assert.equal(shouldRestartCurrentTrack(30, -1, 120), false)
+  assert.equal(shouldRestartCurrentTrack(30, 0, 0), false)
+  assert.equal(shouldRestartCurrentTrack(Number.NaN, 0, 120), false)
 })

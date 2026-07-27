@@ -9,6 +9,7 @@ import { playlists, tracks as initialTracks } from './data/catalog'
 import {
   endedPlaybackAction, initialPlaybackDuration, mediaLoadKey, playableTracks, playbackVisualState,
   playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition, shouldCancelPendingTrack,
+  shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 import { searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
 import { musicProvider, sourceLabel } from './services/musicProvider'
@@ -82,11 +83,13 @@ const formatTime = (seconds: number) => {
 
 function Cover({ name, size = 'medium' }: { name: string; size?: 'small' | 'medium' | 'large' }) {
   const imageUrl = /^https?:\/\//.test(name) ? name : undefined
+  const [failedUrl, setFailedUrl] = useState('')
   return (
     <div className={`cover ${imageUrl ? 'cover--remote' : `cover--${name}`} cover--${size}`} aria-hidden="true">
-      {imageUrl ? <img className="cover__image" src={imageUrl} alt="" loading="lazy" /> : <div className="cover__grain" />}
-      {!imageUrl && <Disc3 className="cover__disc" />}
-      {!imageUrl && <span className="cover__mark">L.</span>}
+      <div className="cover__grain" />
+      <Disc3 className="cover__disc" />
+      <span className="cover__mark">L.</span>
+      {imageUrl && failedUrl !== imageUrl && <img className="cover__image" src={imageUrl} alt="" loading="lazy" decoding="async" onError={() => setFailedUrl(imageUrl)} />}
     </div>
   )
 }
@@ -610,6 +613,11 @@ function App() {
 
   const skip = (direction: 1 | -1) => {
     if (!queue.length) return
+    const currentTime = audioRef.current?.currentTime ?? progress
+    if (direction === -1 && shouldRestartCurrentTrack(currentTime, currentIndex, duration)) {
+      seekTo(0)
+      return
+    }
     const nextIndex = currentIndex < 0 ? 0 : (currentIndex + direction + queue.length) % queue.length
     void resolveAndPlay(queue[nextIndex], undefined, 'play')
   }

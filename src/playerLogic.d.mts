@@ -28,5 +28,6 @@ export declare const playbackVisualState: (state: {
 }) => 'idle' | 'resolving' | 'buffering' | 'playing'
 export declare const playControlDisabled: (playback: string, pending: boolean) => boolean
 export declare const shouldCancelPendingTrack: (requestedKey: string, pendingKey: string | null) => boolean
+export declare const shouldRestartCurrentTrack: (progress: number, currentIndex: number, duration: number) => boolean
 export declare const seekPosition: (value: number, duration: number) => number | null
 export declare const initialPlaybackDuration: (track: DurationTrackLike) => number

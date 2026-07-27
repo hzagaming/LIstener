@@ -141,7 +141,6 @@ class ApiProvider implements MusicProvider {
     url.searchParams.set('input', input.trim())
     if (source) url.searchParams.set('source', source)
     const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(6_000) })
-    if (response.status === 404) return null
     if (!response.ok) throw new Error(`identify failed: ${response.status}`)
     const payload = await response.json() as { match?: unknown }
     return isMusicIdentification(payload.match) ? payload.match : null

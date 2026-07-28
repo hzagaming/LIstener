@@ -14,6 +14,7 @@ import {
 import { searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
 import { musicProvider, sourceLabel } from './services/musicProvider'
 import { isPlaylist, isTrack, musicSources, trackKey } from './types/music'
+import { isSafeUrl } from './urlPolicy.mjs'
 import type { MusicIdentification, MusicSource, Playlist, ProviderStatus, Track } from './types/music'
 
 type View = 'discover' | 'search' | 'library'
@@ -82,7 +83,7 @@ const formatTime = (seconds: number) => {
 }
 
 function Cover({ name, size = 'medium' }: { name: string; size?: 'small' | 'medium' | 'large' }) {
-  const imageUrl = /^https?:\/\//.test(name) ? name : undefined
+  const imageUrl = isSafeUrl(name) ? new URL(name).toString() : undefined
   const [failedUrl, setFailedUrl] = useState('')
   return (
     <div className={`cover ${imageUrl ? 'cover--remote' : `cover--${name}`} cover--${size}`} aria-hidden="true">
@@ -217,6 +218,8 @@ function App() {
   const pendingTrackKeyRef = useRef<string | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const resolveControllerRef = useRef<AbortController | null>(null)
+  const identifyControllerRef = useRef<AbortController | null>(null)
+  const lyricsControllerRef = useRef<AbortController | null>(null)
   const playRequestRef = useRef(0)
   const queueRevisionRef = useRef(0)
   const searchRequestRef = useRef(0)
@@ -273,6 +276,8 @@ function App() {
   }
 
   const updateQuery = (value: string) => {
+    identifyControllerRef.current?.abort()
+    identifyControllerRef.current = null
     identifyRequestRef.current += 1
     setIsIdentifying(false)
     setIdentification(null)
@@ -282,6 +287,8 @@ function App() {
   }
 
   const updateIdentifySource = (source: MusicSource) => {
+    identifyControllerRef.current?.abort()
+    identifyControllerRef.current = null
     identifyRequestRef.current += 1
     setIsIdentifying(false)
     setIdentification(null)
@@ -327,7 +334,7 @@ function App() {
         title: current.title,
         artist: current.artist,
         album: current.album,
-        artwork: /^https?:\/\//.test(current.cover) ? [{ src: current.cover }] : undefined,
+        artwork: isSafeUrl(current.cover) ? [{ src: new URL(current.cover).toString() }] : undefined,
       })
     }
   }, [current])
@@ -347,17 +354,21 @@ function App() {
   useEffect(() => () => {
     playRequestRef.current += 1
     resolveControllerRef.current?.abort()
+    identifyControllerRef.current?.abort()
+    lyricsControllerRef.current?.abort()
     for (const { url } of localFilesRef.current.values()) URL.revokeObjectURL(url)
   }, [])
 
   useEffect(() => {
     let active = true
-    void musicProvider.status()
+    const controller = new AbortController()
+    void musicProvider.status(controller.signal)
       .then((status) => { if (active) setProviderStatus(status) })
       .catch(() => undefined)
       .finally(() => { if (active) setProviderChecking(false) })
     return () => {
       active = false
+      controller.abort()
       if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
     }
   }, [])
@@ -687,6 +698,8 @@ function App() {
   const closeDialog = () => {
     if (playlistModalTrack === undefined && lyricsTrack === null) return
     lyricsRequestRef.current += 1
+    lyricsControllerRef.current?.abort()
+    lyricsControllerRef.current = null
     setPlaylistModalTrack(undefined)
     setLyricsTrack(null)
     setLyricsText('')
@@ -744,17 +757,21 @@ function App() {
   const openLyrics = async (track: Track) => {
     if (!track.capabilities.lyrics) return showNotice('该来源没有提供歌词')
     const requestId = ++lyricsRequestRef.current
+    lyricsControllerRef.current?.abort()
+    const controller = new AbortController()
+    lyricsControllerRef.current = controller
     rememberDialogTrigger()
     setLyricsTrack(track)
     setLyricsText('')
     setLyricsLoading(true)
     try {
       const localLyrics = track.source === 'local' ? localLyricsRef.current.get(trackKey(track)) : undefined
-      const lyrics = localLyrics ?? await musicProvider.lyrics(track)
+      const lyrics = localLyrics ?? await musicProvider.lyrics(track, controller.signal)
       if (requestId === lyricsRequestRef.current) setLyricsText(lyrics.lrc || lyrics.plain || '[00:00.00] 暂无歌词')
     } catch {
-      if (requestId === lyricsRequestRef.current) setLyricsText('[00:00.00] 歌词暂时不可用')
+      if (requestId === lyricsRequestRef.current && !controller.signal.aborted) setLyricsText('[00:00.00] 歌词暂时不可用')
     } finally {
+      if (lyricsControllerRef.current === controller) lyricsControllerRef.current = null
       if (requestId === lyricsRequestRef.current) setLyricsLoading(false)
     }
   }
@@ -853,6 +870,9 @@ function App() {
   const identifyInput = async () => {
     const input = query.normalize('NFKC').trim()
     if (!input) return showNotice('请输入音乐地址或 ID')
+    identifyControllerRef.current?.abort()
+    const controller = new AbortController()
+    identifyControllerRef.current = controller
     const requestId = ++identifyRequestRef.current
     searchRequestRef.current += 1
     setIsSearching(false)
@@ -860,12 +880,12 @@ function App() {
     setIdentification(null)
     setIdentificationHasDetails(null)
     try {
-      const match = await musicProvider.identify(input, /^https?:\/\//i.test(input) ? undefined : identifySource)
+      const match = await musicProvider.identify(input, /^https?:\/\//i.test(input) ? undefined : identifySource, controller.signal)
       if (requestId !== identifyRequestRef.current) return
       if (!match) return showNotice('没有识别出受支持的音乐地址或 ID')
       setIdentification(match)
       try {
-        const track = await musicProvider.lookup(match)
+        const track = await musicProvider.lookup(match, controller.signal)
         if (requestId !== identifyRequestRef.current) return
         setResults([track])
         setResultQuery(input)
@@ -879,8 +899,9 @@ function App() {
         }
       }
     } catch {
-      if (requestId === identifyRequestRef.current) showNotice('解析服务暂时不可用')
+      if (requestId === identifyRequestRef.current && !controller.signal.aborted) showNotice('解析服务暂时不可用')
     } finally {
+      if (identifyControllerRef.current === controller) identifyControllerRef.current = null
       if (requestId === identifyRequestRef.current) setIsIdentifying(false)
     }
   }

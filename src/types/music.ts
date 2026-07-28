@@ -1,3 +1,5 @@
+import { isSafeArtwork, isSafeUrl } from '../urlPolicy.mjs'
+
 export const musicSources = [
   'netease', 'qq', 'kugou', 'kuwo', 'qianqian', '1ting', 'migu', 'lizhi',
   'qingting', 'ximalaya', '5sing-original', '5sing-cover', 'qmkg', 'apple',
@@ -50,11 +52,11 @@ export interface MusicProvider {
   name: string
   search(query: string, signal?: AbortSignal): Promise<Track[]>
   resolve(track: Track, signal?: AbortSignal): Promise<string>
-  identify(input: string, source?: MusicSource): Promise<MusicIdentification | null>
-  lookup(match: MusicIdentification): Promise<Track>
-  lyrics(track: Track): Promise<Lyrics>
-  download(track: Track): Promise<DownloadDescriptor>
-  status(): Promise<ProviderStatus>
+  identify(input: string, source?: MusicSource, signal?: AbortSignal): Promise<MusicIdentification | null>
+  lookup(match: MusicIdentification, signal?: AbortSignal): Promise<Track>
+  lyrics(track: Track, signal?: AbortSignal): Promise<Lyrics>
+  download(track: Track, signal?: AbortSignal): Promise<DownloadDescriptor>
+  status(signal?: AbortSignal): Promise<ProviderStatus>
 }
 
 export interface MusicIdentification {
@@ -85,16 +87,6 @@ export interface ProviderStatus {
 export const isMusicSource = (value: unknown): value is MusicSource =>
   typeof value === 'string' && musicSources.includes(value as MusicSource)
 
-const isSafeUrl = (value: unknown, allowEmpty = false) => {
-  if (typeof value !== 'string') return false
-  if (!value && allowEmpty) return true
-  try {
-    return ['http:', 'https:', 'blob:'].includes(new URL(value).protocol)
-  } catch {
-    return false
-  }
-}
-
 export const isTrack = (value: unknown): value is Track => {
   if (!value || typeof value !== 'object') return false
   const track = value as Record<string, unknown>
@@ -106,9 +98,9 @@ export const isTrack = (value: unknown): value is Track => {
     && Number.isFinite(track.duration)
     && track.duration >= 0
     && isMusicSource(track.source)
-    && isSafeUrl(track.audioUrl, true)
-    && typeof track.cover === 'string'
-    && isSafeUrl(track.sourceUrl)
+    && isSafeUrl(track.audioUrl, { allowEmpty: true, allowBlob: track.source === 'local' })
+    && isSafeArtwork(track.cover)
+    && isSafeUrl(track.sourceUrl, { allowBlob: track.source === 'local' })
     && qualityLevels.includes(track.quality as QualityLevel)
     && isTrackCapabilities(track.capabilities)
 }
@@ -127,7 +119,7 @@ export const isPlaylist = (value: unknown): value is Playlist => {
   return typeof playlist.id === 'string'
     && typeof playlist.title === 'string'
     && typeof playlist.description === 'string'
-    && typeof playlist.cover === 'string'
+    && isSafeArtwork(playlist.cover)
     && Array.isArray(playlist.tracks)
     && playlist.tracks.every(isTrack)
 }
@@ -137,7 +129,7 @@ export const isMusicIdentification = (value: unknown): value is MusicIdentificat
   const match = value as Record<string, unknown>
   return isMusicSource(match.source)
     && typeof match.id === 'string'
-    && typeof match.canonicalUrl === 'string'
+    && isSafeUrl(match.canonicalUrl)
 }
 
 export const trackKey = (track: Pick<Track, 'source' | 'id'>) => `${track.source}:${track.id}`

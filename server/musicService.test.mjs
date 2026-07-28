@@ -409,6 +409,19 @@ test('validates resolved URLs and looked-up tracks at the service boundary', asy
     }],
   })
   await assert.rejects(() => credentialUrl.lookup('safe', '1'), /invalid provider track/)
+
+  const credentialArtwork = createMusicService({
+    providers: [{
+      id: 'safe',
+      search: async () => [],
+      lookup: async () => ({
+        ...track('1'),
+        source: 'safe',
+        cover: 'https://user:secret@img.example/cover.jpg',
+      }),
+    }],
+  })
+  await assert.rejects(() => credentialArtwork.lookup('safe', '1'), /invalid provider track/)
 })
 
 test('rejects malformed download descriptors consistently', async () => {

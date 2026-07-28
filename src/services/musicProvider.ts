@@ -1,6 +1,8 @@
 import { tracks } from '../data/catalog'
+import { createRequestSignal } from '../requestPolicy.mjs'
 import { createSearchFallbackError } from '../searchLogic.mjs'
 import { isMusicIdentification, isMusicSource, isTrack } from '../types/music'
+import { isSafeUrl } from '../urlPolicy.mjs'
 import type {
   DownloadDescriptor, Lyrics, MusicIdentification, MusicProvider, MusicSource,
   ProviderStatus, SourceCapabilities, Track,
@@ -29,13 +31,8 @@ const labels: Record<MusicSource, string> = {
 }
 
 const mediaUrl = (value: unknown, allowBlob = false) => {
-  if (typeof value !== 'string') return null
-  try {
-    const url = new URL(value)
-    return ['http:', 'https:', ...(allowBlob ? ['blob:'] : [])].includes(url.protocol) ? url.toString() : null
-  } catch {
-    return null
-  }
+  if (!isSafeUrl(value, { allowBlob })) return null
+  return new URL(value as string).toString()
 }
 
 const apiError = async (response: Response, message: string) => {
@@ -101,7 +98,7 @@ class ApiProvider implements MusicProvider {
       url.searchParams.set('q', query.trim())
       const response = await fetch(url, {
         headers: { Accept: 'application/json' },
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
+        signal: createRequestSignal(signal, 10_000),
       })
       if (!response.ok) throw new Error(`search failed: ${response.status}`)
       const payload = await response.json() as { tracks?: Track[] }
@@ -127,7 +124,7 @@ class ApiProvider implements MusicProvider {
     url.searchParams.set('id', track.id)
     const response = await fetch(url, {
       headers: { Accept: 'application/json' },
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
+      signal: createRequestSignal(signal, 10_000),
     })
     if (!response.ok) throw await apiError(response, `resolve failed: ${response.status}`)
     const payload = await response.json() as { url?: string }
@@ -136,57 +133,56 @@ class ApiProvider implements MusicProvider {
     return resolvedUrl
   }
 
-  async identify(input: string, source?: MusicSource): Promise<MusicIdentification | null> {
+  async identify(input: string, source?: MusicSource, signal?: AbortSignal): Promise<MusicIdentification | null> {
     const url = new URL('/api/identify', this.baseUrl)
     url.searchParams.set('input', input.trim())
     if (source) url.searchParams.set('source', source)
-    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(6_000) })
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: createRequestSignal(signal, 6_000) })
     if (!response.ok) throw new Error(`identify failed: ${response.status}`)
     const payload = await response.json() as { match?: unknown }
     return isMusicIdentification(payload.match) ? payload.match : null
   }
 
-  async lookup(match: MusicIdentification): Promise<Track> {
+  async lookup(match: MusicIdentification, signal?: AbortSignal): Promise<Track> {
     const url = new URL('/api/track', this.baseUrl)
     url.searchParams.set('source', match.source)
     url.searchParams.set('id', match.id)
-    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: createRequestSignal(signal, 10_000) })
     if (!response.ok) throw new Error(`lookup failed: ${response.status}`)
     const payload = await response.json() as { track?: unknown }
     if (!isTrack(payload.track)) throw new Error('invalid track response')
     return payload.track
   }
 
-  async lyrics(track: Track): Promise<Lyrics> {
+  async lyrics(track: Track, signal?: AbortSignal): Promise<Lyrics> {
     const url = new URL('/api/lyrics', this.baseUrl)
     url.searchParams.set('source', track.source)
     url.searchParams.set('id', track.id)
-    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: createRequestSignal(signal, 10_000) })
     if (!response.ok) throw new Error(`lyrics failed: ${response.status}`)
     const payload = await response.json() as Partial<Lyrics>
     if (typeof payload.plain !== 'string' || typeof payload.lrc !== 'string') throw new Error('invalid lyrics response')
     return payload as Lyrics
   }
 
-  async download(track: Track): Promise<DownloadDescriptor> {
+  async download(track: Track, signal?: AbortSignal): Promise<DownloadDescriptor> {
     const url = new URL('/api/download', this.baseUrl)
     url.searchParams.set('source', track.source)
     url.searchParams.set('id', track.id)
-    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: createRequestSignal(signal, 10_000) })
     if (!response.ok) throw new Error(`download failed: ${response.status}`)
     const payload = await response.json() as Partial<DownloadDescriptor>
     if (typeof payload.url !== 'string' || typeof payload.filename !== 'string') throw new Error('invalid download response')
-    const target = new URL(payload.url)
-    if (!['http:', 'https:'].includes(target.protocol)) throw new Error('unsafe download response')
-    return { url: target.toString(), filename: payload.filename }
+    if (!isSafeUrl(payload.url)) throw new Error('unsafe download response')
+    return { url: new URL(payload.url).toString(), filename: payload.filename }
   }
 
-  async status(): Promise<ProviderStatus> {
+  async status(signal?: AbortSignal): Promise<ProviderStatus> {
     try {
       const url = new URL('/api/health', this.baseUrl)
       const response = await fetch(url, {
         headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(4_000),
+        signal: createRequestSignal(signal, 4_000),
       })
       if (!response.ok) throw new Error(`health failed: ${response.status}`)
       const payload = await response.json() as { status?: string; sources?: unknown[]; capabilities?: unknown }

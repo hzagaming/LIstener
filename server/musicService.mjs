@@ -11,6 +11,7 @@ const defaultCapabilities = (provider) => ({
 
 const qualities = new Set(['unknown', 'standard', 'high', 'lossless', 'hi-res'])
 const playbackModes = new Set(['none', 'preview', 'full'])
+const artworkToken = /^[a-z0-9][a-z0-9_-]{0,63}$/i
 const isUrl = (value, allowEmpty = false) => {
   if (typeof value !== 'string' || (!value && !allowEmpty)) return false
   if (!value) return true
@@ -21,10 +22,11 @@ const isUrl = (value, allowEmpty = false) => {
     return false
   }
 }
+const isArtwork = (value) => typeof value === 'string' && (artworkToken.test(value) || isUrl(value))
 const isTrack = (track) => track && typeof track === 'object'
   && ['id', 'title', 'artist', 'album', 'source', 'audioUrl', 'cover', 'sourceUrl', 'quality']
     .every((key) => typeof track[key] === 'string')
-  && Number.isFinite(track.duration) && track.duration >= 0
+  && Number.isFinite(track.duration) && track.duration >= 0 && isArtwork(track.cover)
   && isUrl(track.audioUrl, true) && isUrl(track.sourceUrl)
   && qualities.has(track.quality)
   && track.capabilities && typeof track.capabilities === 'object'

@@ -2,7 +2,7 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、本地音乐、播放队列和按来源授权的歌词与下载能力。
 
-当前版本：`0.4.6`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.4.7`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
@@ -31,7 +31,7 @@ npm run build
 
 推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 版本使用静态演示数据，不请求无法在 GitHub Pages 运行的 Node API；本地开发和其他后端部署不受影响。
 
-仓库的 **Settings → Pages → Build and deployment → Source** 需要选择 **GitHub Actions**。
+仓库的 **Settings → Pages → Build and deployment → Source** 必须选择 **GitHub Actions**。如果选择从 `main` 分支发布，GitHub 会在 Actions 部署后再次用源码覆盖站点，导致 `/src/main.tsx` 和 `/favicon.svg` 404；部署后的线上冒烟检查会将这种错误配置标记为失败。
 
 ## 接入音乐源
 

@@ -14,11 +14,20 @@ export const endedPlaybackAction = ({ pending, queueLength, currentIndex, repeat
   return 'next'
 }
 
+export const shouldApplyEndedAction = (action) => action !== 'ignore'
+
 export const mediaLoadKey = (track) => JSON.stringify([track.source, track.id, track.audioUrl])
 
 export const removalFocusIndex = (removedIndex, remainingLength) => (
   remainingLength > 0 ? Math.min(Math.max(removedIndex, 0), remainingLength - 1) : -1
 )
+
+export const focusTrapTargetIndex = (activeIndex, length, backwards) => {
+  if (length <= 0) return -1
+  if (activeIndex < 0) return backwards ? length - 1 : 0
+  if (backwards && activeIndex === 0) return length - 1
+  return !backwards && activeIndex === length - 1 ? 0 : -1
+}
 
 export const playbackVisualState = ({ current, playing, resolving, buffering }) => {
   if (resolving) return 'resolving'
@@ -33,9 +42,8 @@ export const shouldCancelPendingTrack = (requestedKey, pendingKey) => (
   Boolean(pendingKey) && requestedKey === pendingKey
 )
 
-export const shouldRestartCurrentTrack = (progress, currentIndex, duration) => (
+export const shouldRestartCurrentTrack = (progress, currentIndex) => (
   currentIndex >= 0 && Number.isFinite(progress) && progress > 3
-    && Number.isFinite(duration) && duration > 0
 )
 
 export const seekPosition = (value, duration) => (

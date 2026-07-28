@@ -18,8 +18,10 @@ export declare const endedPlaybackAction: (state: {
   currentIndex: number
   repeatMode: 'off' | 'all' | 'one'
 }) => 'ignore' | 'stop' | 'restart' | 'next'
+export declare const shouldApplyEndedAction: (action: 'ignore' | 'stop' | 'restart' | 'next') => boolean
 export declare const mediaLoadKey: (track: TrackLike) => string
 export declare const removalFocusIndex: (removedIndex: number, remainingLength: number) => number
+export declare const focusTrapTargetIndex: (activeIndex: number, length: number, backwards: boolean) => number
 export declare const playbackVisualState: (state: {
   current: boolean
   playing: boolean
@@ -28,6 +30,6 @@ export declare const playbackVisualState: (state: {
 }) => 'idle' | 'resolving' | 'buffering' | 'playing'
 export declare const playControlDisabled: (playback: string, pending: boolean) => boolean
 export declare const shouldCancelPendingTrack: (requestedKey: string, pendingKey: string | null) => boolean
-export declare const shouldRestartCurrentTrack: (progress: number, currentIndex: number, duration: number) => boolean
+export declare const shouldRestartCurrentTrack: (progress: number, currentIndex: number) => boolean
 export declare const seekPosition: (value: number, duration: number) => number | null
 export declare const initialPlaybackDuration: (track: DurationTrackLike) => number

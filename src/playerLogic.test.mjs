@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  endedPlaybackAction, initialPlaybackDuration, mediaLoadKey, playableTracks, playbackVisualState,
-  playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition, shouldCancelPendingTrack,
-  shouldRestartCurrentTrack,
+  endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
+  playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
+  shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 
 const track = (id, playback = 'full', audioUrl = '') => ({
@@ -29,7 +29,11 @@ test('keeps only playable tracks in their original order', () => {
 })
 
 test('does not let an old ended event replace a pending user selection', () => {
-  assert.equal(endedPlaybackAction({ pending: true, queueLength: 3, currentIndex: 0, repeatMode: 'all' }), 'ignore')
+  const action = endedPlaybackAction({ pending: true, queueLength: 3, currentIndex: 0, repeatMode: 'all' })
+
+  assert.equal(action, 'ignore')
+  assert.equal(shouldApplyEndedAction(action), false)
+  assert.equal(shouldApplyEndedAction('next'), true)
 })
 
 test('chooses the correct action when the active track ends', () => {
@@ -50,6 +54,15 @@ test('keeps removal focus on the nearest remaining item', () => {
   assert.equal(removalFocusIndex(1, 2), 1)
   assert.equal(removalFocusIndex(2, 2), 1)
   assert.equal(removalFocusIndex(0, 0), -1)
+})
+
+test('keeps keyboard focus inside an open overlay', () => {
+  assert.equal(focusTrapTargetIndex(-1, 3, false), 0)
+  assert.equal(focusTrapTargetIndex(-1, 3, true), 2)
+  assert.equal(focusTrapTargetIndex(0, 3, true), 2)
+  assert.equal(focusTrapTargetIndex(2, 3, false), 0)
+  assert.equal(focusTrapTargetIndex(1, 3, false), -1)
+  assert.equal(focusTrapTargetIndex(-1, 0, false), -1)
 })
 
 test('prioritizes resolve and buffer feedback over playback state', () => {
@@ -87,8 +100,8 @@ test('only cancels when the selected track owns the pending request', () => {
 
 test('restarts the current track before moving to the previous one', () => {
   assert.equal(shouldRestartCurrentTrack(3.01, 0, 120), true)
+  assert.equal(shouldRestartCurrentTrack(3.01, 0, 0), true)
   assert.equal(shouldRestartCurrentTrack(3, 0, 120), false)
   assert.equal(shouldRestartCurrentTrack(30, -1, 120), false)
-  assert.equal(shouldRestartCurrentTrack(30, 0, 0), false)
   assert.equal(shouldRestartCurrentTrack(Number.NaN, 0, 120), false)
 })

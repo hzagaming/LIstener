@@ -29,10 +29,24 @@ test('GitHub Pages deploys dist without probing an unavailable API', async () =>
   assert.match(workflow, /path:\s*\.\/dist/)
   assert.match(workflow, /VITE_STATIC_DEMO:\s*['"]true['"]/)
   assert.match(workflow, /actions\/deploy-pages@/)
+  assert.match(workflow, /node src\/pagesSmokeCheck\.mjs/)
 })
 
 test('the first render does not depend on external stylesheets', async () => {
   const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
 
   assert.doesNotMatch(styles, /@import\s+(?:url\()?['"]?https?:\/\//i)
+})
+
+test('touch devices keep primary playback affordances visible', async () => {
+  const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+
+  assert.match(styles, /@media\s*\(hover:\s*none\)[\s\S]*?\.cover-play[\s\S]*?opacity:\s*1/)
+})
+
+test('mobile layouts use the dynamic viewport', async () => {
+  const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+
+  assert.match(styles, /min-height:\s*100dvh/)
+  assert.match(styles, /max-height:[^;]*100dvh/)
 })

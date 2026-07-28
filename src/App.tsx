@@ -7,9 +7,9 @@ import {
 } from 'lucide-react'
 import { playlists, tracks as initialTracks } from './data/catalog'
 import {
-  endedPlaybackAction, initialPlaybackDuration, mediaLoadKey, playableTracks, playbackVisualState,
-  playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition, shouldCancelPendingTrack,
-  shouldRestartCurrentTrack,
+  endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
+  playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
+  shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 import { searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
 import { musicProvider, sourceLabel } from './services/musicProvider'
@@ -390,16 +390,11 @@ function App() {
     const trapFocus = (event: KeyboardEvent) => {
       if (event.key !== 'Tab') return
       const focusable = [...container.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])')]
-      if (!focusable.length) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
+      const activeIndex = focusable.indexOf(document.activeElement as HTMLElement)
+      const targetIndex = focusTrapTargetIndex(activeIndex, focusable.length, event.shiftKey)
+      if (targetIndex < 0) return
+      event.preventDefault()
+      focusable[targetIndex].focus()
     }
     document.addEventListener('keydown', trapFocus)
     return () => document.removeEventListener('keydown', trapFocus)
@@ -614,8 +609,14 @@ function App() {
   const skip = (direction: 1 | -1) => {
     if (!queue.length) return
     const currentTime = audioRef.current?.currentTime ?? progress
-    if (direction === -1 && shouldRestartCurrentTrack(currentTime, currentIndex, duration)) {
-      seekTo(0)
+    if (direction === -1 && shouldRestartCurrentTrack(currentTime, currentIndex)) {
+      const audio = audioRef.current
+      try {
+        if (audio) audio.currentTime = 0
+        setProgress(0)
+      } catch {
+        showNotice('当前音源暂不支持跳转')
+      }
       return
     }
     const nextIndex = currentIndex < 0 ? 0 : (currentIndex + direction + queue.length) % queue.length
@@ -644,6 +645,7 @@ function App() {
       currentIndex,
       repeatMode,
     })
+    if (!shouldApplyEndedAction(action)) return
     setIsPlaying(false)
     setIsBuffering(false)
     if (action === 'restart' && audioRef.current) {

@@ -98,7 +98,7 @@ export const createProviderHttpClient = ({
   maxRetries = 1,
   retryDelayMs = 80,
   waitImpl = wait,
-  userAgent = 'Listener/0.4.9 (+music metadata search)',
+  userAgent = 'Listener/0.4.10 (+music metadata search)',
 } = {}) => {
   const hosts = new Set((allowedHosts ?? []).map(normalizeHost).filter(Boolean))
   if (!hosts.size) throw new Error('at least one public provider host is required')

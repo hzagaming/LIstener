@@ -422,8 +422,9 @@ function App() {
     const audio = audioRef.current
     if (!audio) return
     audio.volume = volume
+    if (!isPlaying) return
     audio.load()
-    if (isPlaying) attemptPlayback(audio)
+    attemptPlayback(audio)
   }, [current]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const inputMode = searchInputMode(query)
@@ -1391,7 +1392,7 @@ function App() {
           key={mediaLoadKey(current)}
           ref={audioRef}
           src={current.audioUrl || undefined}
-          preload="metadata"
+          preload="none"
           playsInline
           onPlay={(event) => { if (isCurrentAudio(event.currentTarget)) setIsPlaying(true) }}
           onPlaying={(event) => { if (isCurrentAudio(event.currentTarget)) setIsBuffering(false) }}

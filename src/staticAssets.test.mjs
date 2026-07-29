@@ -50,3 +50,20 @@ test('mobile layouts use the dynamic viewport', async () => {
   assert.match(styles, /min-height:\s*100dvh/)
   assert.match(styles, /max-height:[^;]*100dvh/)
 })
+
+test('short desktop viewports keep every sidebar section reachable', async () => {
+  const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+  const sidebar = styles.match(/\.sidebar\s*\{([^}]*)\}/)?.[1] ?? ''
+
+  assert.match(sidebar, /overflow-y:\s*auto/)
+  assert.match(styles, /\.sidebar\s*>\s*\*\s*\{[^}]*flex-shrink:\s*0/)
+})
+
+test('the initial player does not initiate third-party audio loading', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const effectEnd = app.indexOf('  }, [current]) // eslint-disable-line react-hooks/exhaustive-deps')
+  const currentTrackEffect = effectEnd < 0 ? '' : app.slice(Math.max(0, effectEnd - 300), effectEnd)
+
+  assert.match(app, /<audio[\s\S]*?preload="none"/)
+  assert.match(currentTrackEffect, /if \(!isPlaying\) return\s+audio\.load\(\)/)
+})

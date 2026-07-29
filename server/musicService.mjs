@@ -253,7 +253,10 @@ export const createMusicService = ({
         }
         return [valid]
       })
-      if (!providerTracks.length || (providerErrors.length && providerTracks.every((tracks) => !tracks.length))) {
+      if (!providerTracks.length || (
+        providerErrors.length === selectedProviders.length
+        && providerTracks.every((tracks) => !tracks.length)
+      )) {
         setBounded(failureCache, key, { expiresAt: now() + failureTtlMs })
         throw new Error('all music providers failed')
       }

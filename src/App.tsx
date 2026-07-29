@@ -1051,7 +1051,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside id="mobile-navigation" className={`sidebar ${mobileNavOpen ? 'sidebar--open' : ''}`} aria-label="侧边导航" {...(queueOpen || dialogOpen ? { inert: '' } : {})}>
+      <aside id="mobile-navigation" className={`sidebar ${mobileNavOpen ? 'sidebar--open' : ''}`} role={mobileNavOpen ? 'dialog' : undefined} aria-modal={mobileNavOpen ? 'true' : undefined} aria-label="侧边导航" {...(queueOpen || dialogOpen ? { inert: '' } : {})}>
         <button className="sidebar__close icon-button" onClick={closeMobileNav} aria-label="关闭菜单"><X /></button>
         <button className="brand" onClick={() => navigate('discover')}>
           <span className="brand__symbol"><Waves /></span>
@@ -1065,7 +1065,7 @@ function App() {
         </nav>
 
         <div className="sidebar__section-label">我的音乐</div>
-        <nav className="nav-group nav-group--sub">
+        <nav className="nav-group nav-group--sub" aria-label="个人音乐">
           <button onClick={() => navigateLibrarySection('liked')}><Heart />喜欢的音乐 <span>{liked.size}</span></button>
           <button onClick={() => navigateLibrarySection('playlists')}><Library />我的歌单 <span>{userPlaylists.length}</span></button>
           <button onClick={openQueue}><ListMusic />最近播放</button>
@@ -1179,7 +1179,7 @@ function App() {
                 <input id="search-input" aria-label="搜索歌曲、歌手、专辑、音乐地址或 ID" aria-invalid={inputMode === 'too-long'} aria-describedby={inputMode === 'too-long' ? 'search-input-error search-guidance' : 'search-guidance'} maxLength={2048} value={query} onChange={(event) => updateQuery(event.target.value)} placeholder="歌曲、歌手、专辑、音乐地址或 ID……" />
                 {query && <button onClick={() => updateQuery('')} aria-label="清空"><X /></button>}
               </div>
-              <div className="search-hints"><span>试试：</span>{['周杰伦', '久石譲', 'Golden Hour'].map((word) => <button key={word} onClick={() => updateQuery(word)}>{word}</button>)}</div>
+              <div className="search-hints"><span>试试：</span>{['SoundHelix', 'Blue Hour', 'Golden Light'].map((word) => <button key={word} onClick={() => updateQuery(word)}>{word}</button>)}</div>
               {inputMode === 'too-long' && <div id="search-input-error" className="search-input-error" role="alert">搜索关键词最多 100 个字符；如果粘贴的是音乐地址，请保留完整的 http:// 或 https:// 前缀。</div>}
               <div className="id-resolver">
                 <select aria-label="音乐 ID 所属平台" value={identifySource} onChange={(event) => updateIdentifySource(event.target.value as MusicSource)}>

@@ -150,7 +150,7 @@ test('fails when every provider fails so the frontend can use its fallback', asy
   await assert.rejects(() => service.search('song', 20), /all music providers failed/)
 })
 
-test('fails when an empty aggregate includes a provider outage', async () => {
+test('returns a reported empty aggregate when one provider is healthy', async () => {
   const service = createMusicService({
     providers: [
       { id: 'empty', search: async () => [] },
@@ -158,10 +158,13 @@ test('fails when an empty aggregate includes a provider outage', async () => {
     ],
   })
 
-  await assert.rejects(() => service.search('song', 20), /all music providers failed/)
+  const result = await service.searchDetailed({ query: 'song' })
+  assert.deepEqual(result.tracks, [])
+  assert.deepEqual(result.providerErrors, [{ provider: 'offline', code: 'PROVIDER_UNAVAILABLE' }])
+  assert.equal(result.cached, false)
 })
 
-test('fails when an empty aggregate includes an invalid provider response', async () => {
+test('returns a reported empty aggregate when another provider response is invalid', async () => {
   const service = createMusicService({
     providers: [
       { id: 'empty', search: async () => [] },
@@ -169,7 +172,10 @@ test('fails when an empty aggregate includes an invalid provider response', asyn
     ],
   })
 
-  await assert.rejects(() => service.search('song', 20), /all music providers failed/)
+  const result = await service.searchDetailed({ query: 'song' })
+  assert.deepEqual(result.tracks, [])
+  assert.deepEqual(result.providerErrors, [{ provider: 'invalid', code: 'PROVIDER_INVALID_RESPONSE' }])
+  assert.equal(result.cached, false)
 })
 
 test('resolves tracks through the requested provider', async () => {

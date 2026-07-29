@@ -1,5 +1,5 @@
 import { tracks } from '../data/catalog'
-import { createRequestSignal } from '../requestPolicy.mjs'
+import { abortableDelay, createRequestSignal } from '../requestPolicy.mjs'
 import { createSearchFallbackError } from '../searchLogic.mjs'
 import { isMusicIdentification, isMusicSource, isTrack } from '../types/music'
 import { isSafeUrl } from '../urlPolicy.mjs'
@@ -50,9 +50,9 @@ class DemoProvider implements MusicProvider {
   id: MusicSource = 'demo'
   name = '聚合搜索'
 
-  async search(query: string): Promise<Track[]> {
+  async search(query: string, signal?: AbortSignal): Promise<Track[]> {
     const key = query.trim().toLocaleLowerCase()
-    await new Promise((resolve) => setTimeout(resolve, 240))
+    await abortableDelay(240, signal)
     if (!key) return tracks
     return tracks.filter((track) =>
       [track.title, track.artist, track.album].some((value) =>
@@ -92,7 +92,7 @@ class ApiProvider implements MusicProvider {
   ) {}
 
   async search(query: string, signal?: AbortSignal): Promise<Track[]> {
-    if (!query.trim()) return this.fallback.search(query)
+    if (!query.trim()) return this.fallback.search(query, signal)
     try {
       const url = new URL('/api/search', this.baseUrl)
       url.searchParams.set('q', query.trim())
@@ -193,7 +193,8 @@ class ApiProvider implements MusicProvider {
         ? payload.capabilities as Partial<Record<MusicSource, SourceCapabilities>>
         : {}
       return { online: true, sources, capabilities }
-    } catch {
+    } catch (error) {
+      if (signal?.aborted) throw error
       return this.fallback.status()
     }
   }

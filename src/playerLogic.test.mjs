@@ -81,9 +81,10 @@ test('clamps media session seek positions to a playable range', () => {
 })
 
 test('waits for preview metadata before exposing its playable duration', () => {
-  assert.equal(initialPlaybackDuration({ duration: 370, capabilities: { playback: 'preview' } }), 0)
-  assert.equal(initialPlaybackDuration({ duration: 370, capabilities: { playback: 'full' } }), 370)
-  assert.equal(initialPlaybackDuration({ duration: 370, capabilities: { playback: 'none' } }), 0)
+  assert.equal(initialPlaybackDuration({ duration: 370, audioUrl: 'https://audio.example/full.mp3', capabilities: { playback: 'full' } }), 370)
+  assert.equal(initialPlaybackDuration({ duration: 370, audioUrl: 'https://audio.example/preview.mp3', capabilities: { playback: 'preview' } }), 0)
+  assert.equal(initialPlaybackDuration({ duration: 370, audioUrl: '', capabilities: { playback: 'full' } }), 0)
+  assert.equal(initialPlaybackDuration({ duration: 370, audioUrl: '', capabilities: { playback: 'none' } }), 0)
 })
 
 test('keeps a pending playback control available so loading can be cancelled', () => {

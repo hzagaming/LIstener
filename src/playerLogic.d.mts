@@ -7,6 +7,7 @@ type TrackLike = {
 
 type DurationTrackLike = {
   duration: number
+  audioUrl: string
   capabilities: { playback: string }
 }
 

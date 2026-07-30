@@ -218,6 +218,7 @@ function App() {
   const pendingTrackKeyRef = useRef<string | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const resolveControllerRef = useRef<AbortController | null>(null)
+  const searchControllerRef = useRef<AbortController | null>(null)
   const identifyControllerRef = useRef<AbortController | null>(null)
   const lyricsControllerRef = useRef<AbortController | null>(null)
   const playRequestRef = useRef(0)
@@ -327,6 +328,12 @@ function App() {
   }, [repeatMode])
 
   useEffect(() => {
+    if (!pendingDeletePlaylistId) return
+    const timeout = window.setTimeout(() => setPendingDeletePlaylistId(null), 5_000)
+    return () => window.clearTimeout(timeout)
+  }, [pendingDeletePlaylistId])
+
+  useEffect(() => {
     if (current.source !== 'local') writeStorage('listener.current', prepareStoredTrack(current))
     document.title = `${current.title} · ${current.artist} — Listener`
     if ('mediaSession' in navigator && 'MediaMetadata' in window) {
@@ -347,13 +354,17 @@ function App() {
   useEffect(() => {
     if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function') return
     const position = seekPosition(progress, duration)
-    if (position === null) return
+    if (position === null) {
+      try { navigator.mediaSession.setPositionState() } catch { /* unsupported media */ }
+      return
+    }
     try { navigator.mediaSession.setPositionState({ duration, playbackRate: 1, position }) } catch { /* unsupported media */ }
   }, [duration, progress])
 
   useEffect(() => () => {
     playRequestRef.current += 1
     resolveControllerRef.current?.abort()
+    searchControllerRef.current?.abort()
     identifyControllerRef.current?.abort()
     lyricsControllerRef.current?.abort()
     for (const { url } of localFilesRef.current.values()) URL.revokeObjectURL(url)
@@ -431,7 +442,6 @@ function App() {
 
   useEffect(() => {
     let active = true
-    const controller = new AbortController()
     const requestId = ++searchRequestRef.current
     const trimmed = query.trim()
     setSearchDegraded(false)
@@ -439,14 +449,16 @@ function App() {
       setResults(initialTracks)
       setResultQuery('')
       setIsSearching(false)
-      return () => controller.abort()
+      return
     }
     if (inputMode !== 'search') {
       setResults([])
       setResultQuery(trimmed)
       setIsSearching(false)
-      return () => controller.abort()
+      return
     }
+    const controller = new AbortController()
+    searchControllerRef.current = controller
     setResults([])
     setResultQuery(trimmed)
     setIsSearching(true)
@@ -461,11 +473,13 @@ function App() {
           setSearchDegraded(true)
         }
       } finally {
+        if (searchControllerRef.current === controller) searchControllerRef.current = null
         if (active && requestId === searchRequestRef.current) setIsSearching(false)
       }
     }, 180)
     return () => {
       active = false
+      if (searchControllerRef.current === controller) searchControllerRef.current = null
       controller.abort()
       window.clearTimeout(timeout)
     }
@@ -871,6 +885,8 @@ function App() {
   const identifyInput = async () => {
     const input = query.normalize('NFKC').trim()
     if (!input) return showNotice('请输入音乐地址或 ID')
+    searchControllerRef.current?.abort()
+    searchControllerRef.current = null
     identifyControllerRef.current?.abort()
     const controller = new AbortController()
     identifyControllerRef.current = controller
@@ -950,6 +966,8 @@ function App() {
     const update = (track: Track) => trackKey(track) === currentKey ? invalidated : track
     queueRevisionRef.current += 1
     setCurrent(invalidated)
+    setProgress(0)
+    setDuration(initialPlaybackDuration(invalidated))
     setQueue((previous) => previous.map(update))
     setResults((previous) => previous.map(update))
     setLiked((previous) => previous.has(currentKey) ? new Map(previous).set(currentKey, invalidated) : previous)
@@ -972,12 +990,14 @@ function App() {
   const navigate = (next: View) => {
     setView(next)
     setMobileNavOpen(false)
+    setPendingDeletePlaylistId(null)
     if (next === 'search') window.setTimeout(() => document.querySelector<HTMLInputElement>('#search-input')?.focus(), 0)
   }
 
   const navigateLibrarySection = (target: 'playlists' | 'liked') => {
     setView('library')
     setMobileNavOpen(false)
+    setPendingDeletePlaylistId(null)
     window.setTimeout(() => {
       const heading = target === 'playlists' ? playlistsHeadingRef.current : likedHeadingRef.current
       heading?.scrollIntoView({ block: 'start' })

@@ -4,7 +4,7 @@ const attribute = (tag, name) => tag.match(new RegExp(`\\b${name}=["']([^"']+)["
 
 export const inspectPageHtml = (html, pageUrl) => {
   if (/<script\b[^>]*\bsrc=["'][^"']*\/src\/[^"']+\.(?:jsx?|tsx?)["']/i.test(html)) {
-    throw new Error('deployed page exposes a source entry instead of a production bundle')
+    throw new Error('deployed page exposes a source entry instead of a production bundle; set Settings > Pages > Build and deployment > Source to GitHub Actions')
   }
 
   const page = new URL(pageUrl)
@@ -45,12 +45,38 @@ export const verifyPage = async (pageUrl, fetchPage = fetch) => {
   return resources
 }
 
+export const verifyPageWithRetries = async (pageUrl, {
+  attempts = 1,
+  delayMs = 0,
+  fetchPage = fetch,
+  wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+} = {}) => {
+  const count = Number.isSafeInteger(attempts) && attempts > 0 ? attempts : 1
+  let failure
+  let resources
+  for (let attempt = 0; attempt < count; attempt += 1) {
+    if (attempt > 0 && delayMs > 0) await wait(delayMs)
+    try {
+      resources = await verifyPage(pageUrl, fetchPage)
+      failure = undefined
+    } catch (error) {
+      failure = error
+      resources = undefined
+    }
+  }
+  if (failure) throw failure
+  return resources
+}
+
 const entry = process.argv[1] ? pathToFileURL(process.argv[1]).href : ''
 if (import.meta.url === entry) {
   const pageUrl = process.argv[2]
   if (!pageUrl) throw new Error('usage: node src/pagesSmokeCheck.mjs <pages-url>')
   const delay = Number(process.env.PAGES_VERIFY_DELAY_MS ?? 0)
-  if (Number.isFinite(delay) && delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
-  const resources = await verifyPage(pageUrl)
+  const attempts = Number(process.env.PAGES_VERIFY_ATTEMPTS ?? 1)
+  const resources = await verifyPageWithRetries(pageUrl, {
+    attempts,
+    delayMs: Number.isFinite(delay) && delay > 0 ? delay : 0,
+  })
   console.log(`Verified ${pageUrl} and ${resources.length} critical resources`)
 }

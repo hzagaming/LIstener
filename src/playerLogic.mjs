@@ -53,5 +53,5 @@ export const seekPosition = (value, duration) => (
 )
 
 export const initialPlaybackDuration = (track) => (
-  track.capabilities.playback === 'full' ? track.duration : 0
+  track.capabilities.playback === 'full' && track.audioUrl ? track.duration : 0
 )

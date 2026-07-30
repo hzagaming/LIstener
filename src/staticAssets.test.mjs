@@ -28,7 +28,11 @@ test('GitHub Pages deploys dist without probing an unavailable API', async () =>
 
   assert.match(workflow, /path:\s*\.\/dist/)
   assert.match(workflow, /VITE_STATIC_DEMO:\s*['"]true['"]/)
-  assert.match(workflow, /actions\/deploy-pages@/)
+  assert.match(workflow, /actions\/checkout@v7/)
+  assert.match(workflow, /actions\/setup-node@v7/)
+  assert.match(workflow, /actions\/configure-pages@v5/)
+  assert.match(workflow, /actions\/upload-pages-artifact@v3/)
+  assert.match(workflow, /actions\/deploy-pages@v4/)
   assert.match(workflow, /node src\/pagesSmokeCheck\.mjs/)
 })
 
@@ -40,8 +44,12 @@ test('the first render does not depend on external stylesheets', async () => {
 
 test('touch devices keep primary playback affordances visible', async () => {
   const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+  const trackColumns = [...styles.matchAll(/\.track-row\s*\{[^}]*grid-template-columns:\s*(\d+)px/g)]
 
   assert.match(styles, /@media\s*\(hover:\s*none\)[\s\S]*?\.cover-play[\s\S]*?opacity:\s*1/)
+  assert.match(styles, /\.track-row__play\s*\{[^}]*min-width:\s*40px/)
+  assert.match(styles, /@media\s*\(hover:\s*none\)[\s\S]*?\.track-row__play span[^}]*display:\s*none[\s\S]*?\.track-row__play svg[^}]*display:\s*inline/)
+  assert.deepEqual(trackColumns.map((match) => Number(match[1])), [40, 40, 40])
 })
 
 test('mobile layouts use the dynamic viewport', async () => {
@@ -66,4 +74,46 @@ test('the initial player does not initiate third-party audio loading', async () 
 
   assert.match(app, /<audio[\s\S]*?preload="none"/)
   assert.match(currentTrackEffect, /if \(!isPlaying\) return\s+audio\.load\(\)/)
+})
+
+test('narrow players preserve readable track metadata', async () => {
+  const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+  const mobile = styles.slice(styles.indexOf('@media (max-width: 820px)'), styles.indexOf('@media (max-width: 420px)'))
+
+  assert.match(styles, /@media\s*\(max-width:\s*350px\)[\s\S]*?\.player__track \.cover\s*\{[^}]*display:\s*none/)
+  assert.match(mobile, /\.track-row__actions\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/)
+})
+
+test('ID resolution aborts an active keyword search', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const searchEffect = app.slice(app.indexOf('const inputMode'), app.indexOf('const currentKey'))
+  const identifyInput = app.slice(app.indexOf('const identifyInput'), app.indexOf('const removeFromQueue'))
+
+  assert.match(app, /const searchControllerRef = useRef<AbortController \| null>\(null\)/)
+  assert.match(searchEffect, /searchControllerRef\.current = controller/)
+  assert.match(identifyInput, /searchControllerRef\.current\?\.abort\(\)/)
+})
+
+test('playlist delete confirmation expires automatically', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+
+  assert.match(app, /if \(!pendingDeletePlaylistId\) return\s+const timeout = window\.setTimeout\(\(\) => setPendingDeletePlaylistId\(null\), 5_000\)/)
+})
+
+test('an invalidated audio source clears stale progress metadata', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const handler = app.slice(app.indexOf('const handleAudioError'), app.indexOf('const seekTo'))
+
+  assert.match(handler, /setProgress\(0\)/)
+  assert.match(handler, /setDuration\(initialPlaybackDuration\(invalidated\)\)/)
+})
+
+test('an unplayable track clears stale system media progress', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const positionEffect = app.slice(
+    app.indexOf("typeof navigator.mediaSession.setPositionState !== 'function'"),
+    app.indexOf('  }, [duration, progress])'),
+  )
+
+  assert.match(positionEffect, /if \(position === null\)[\s\S]*?navigator\.mediaSession\.setPositionState\(\)/)
 })

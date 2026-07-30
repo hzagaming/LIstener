@@ -6,6 +6,7 @@ import {
   Volume2, VolumeX, Waves, X,
 } from 'lucide-react'
 import { playlists, tracks as initialTracks } from './data/catalog'
+import { localFileStem, readLocalLyrics, selectLocalAudioFiles } from './localFiles.mjs'
 import {
   endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
   playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
@@ -429,6 +430,8 @@ function App() {
     return () => { document.body.style.overflow = previous }
   }, [lyricsTrack, mobileNavOpen, playlistModalTrack, queueOpen])
 
+  const currentMediaKey = mediaLoadKey(current)
+
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
@@ -436,7 +439,7 @@ function App() {
     if (!isPlaying) return
     audio.load()
     attemptPlayback(audio)
-  }, [current]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentMediaKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const inputMode = searchInputMode(query)
 
@@ -816,20 +819,39 @@ function App() {
     if (!files?.length) return
     const imported: Track[] = []
     const selected = Array.from(files)
-    const lyricsFiles = new Map(selected
-      .filter((file) => /\.lrc$/i.test(file.name))
-      .map((file) => [file.name.replace(/\.lrc$/i, '').toLocaleLowerCase(), file]))
-    for (const file of selected.filter((item) => !/\.lrc$/i.test(item.name)).slice(0, 100)) {
-      if (!file.type.startsWith('audio/') && !/\.(aac|aiff?|alac|flac|m4a|mp3|ogg|opus|wav|webm)$/i.test(file.name)) continue
+    const lyricsByStem = new Map<string, string>()
+    for (const file of selected.filter((item) => /\.lrc$/i.test(item.name)).slice(0, 100)) {
+      try {
+        const lyrics = await readLocalLyrics(file)
+        if (lyrics.trim()) lyricsByStem.set(localFileStem(file.name), lyrics)
+      } catch { /* unreadable local lyrics */ }
+    }
+
+    const matchedKeys = new Set<string>()
+    for (const [key, { file }] of localFilesRef.current.entries()) {
+      const lrc = lyricsByStem.get(localFileStem(file.name))
+      if (!lrc) continue
+      localLyricsRef.current.set(key, { plain: lrc.replace(/\[[^\]]+]/g, '').trim(), lrc })
+      matchedKeys.add(key)
+    }
+    const enableLocalLyrics = (track: Track) => matchedKeys.has(trackKey(track)) && !track.capabilities.lyrics
+      ? { ...track, capabilities: { ...track.capabilities, lyrics: true } }
+      : track
+    if (matchedKeys.size) {
+      queueRevisionRef.current += 1
+      setLocalTracks((previous) => previous.map(enableLocalLyrics))
+      setQueue((previous) => previous.map(enableLocalLyrics))
+      setLiked((previous) => new Map([...previous].map(([key, track]) => [key, enableLocalLyrics(track)])))
+      setUserPlaylists((previous) => previous.map((playlist) => ({ ...playlist, tracks: playlist.tracks.map(enableLocalLyrics) })))
+      setCurrent((previous) => enableLocalLyrics(previous))
+    }
+
+    for (const file of selectLocalAudioFiles(selected)) {
       const id = `${file.name}:${file.size}:${file.lastModified}`
       const key = `local:${id}`
       if (localFilesRef.current.has(key)) continue
       const url = URL.createObjectURL(file)
-      const lyricsFile = lyricsFiles.get(file.name.replace(/\.[^.]+$/, '').toLocaleLowerCase())
-      let lrc = ''
-      if (lyricsFile) {
-        try { lrc = (await lyricsFile.text()).slice(0, 500_000) } catch { /* unreadable local lyrics */ }
-      }
+      const lrc = lyricsByStem.get(localFileStem(file.name)) ?? ''
       localFilesRef.current.set(key, { file, url })
       if (lrc) localLyricsRef.current.set(key, { plain: lrc.replace(/\[[^\]]+]/g, '').trim(), lrc })
       imported.push({
@@ -846,11 +868,16 @@ function App() {
         capabilities: { playback: 'full', lyrics: Boolean(lrc), download: true },
       })
     }
-    if (!imported.length) return showNotice('没有发现可用的音频文件')
+    if (!imported.length) {
+      return showNotice(matchedKeys.size
+        ? `已为 ${matchedKeys.size} 首本地音乐匹配歌词`
+        : '没有发现可用的音频文件或匹配的 LRC')
+    }
     setLocalTracks((previous) => [...previous, ...imported])
     queueRevisionRef.current += 1
     setQueue((previous) => [...imported, ...previous])
-    showNotice(`已导入 ${imported.length} 首本地音乐`)
+    const lyricCount = matchedKeys.size + imported.filter((track) => track.capabilities.lyrics).length
+    showNotice(`已导入 ${imported.length} 首本地音乐${lyricCount ? ` · 匹配 ${lyricCount} 份歌词` : ''}`)
   }
 
   const removeLocalTrack = (track: Track) => {
@@ -1409,7 +1436,7 @@ function App() {
 
       <footer className={`player ${playerVisualState === 'playing' ? 'player--playing' : ''} ${playerLoading ? 'player--loading' : ''}`} {...(queueOpen || mobileNavOpen || dialogOpen ? { inert: '' } : {})}>
         <audio
-          key={mediaLoadKey(current)}
+          key={currentMediaKey}
           ref={audioRef}
           src={current.audioUrl || undefined}
           preload="none"

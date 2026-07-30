@@ -69,8 +69,8 @@ test('short desktop viewports keep every sidebar section reachable', async () =>
 
 test('the initial player does not initiate third-party audio loading', async () => {
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
-  const effectEnd = app.indexOf('  }, [current]) // eslint-disable-line react-hooks/exhaustive-deps')
-  const currentTrackEffect = effectEnd < 0 ? '' : app.slice(Math.max(0, effectEnd - 300), effectEnd)
+  const effectEnd = app.indexOf('  }, [currentMediaKey]) // eslint-disable-line react-hooks/exhaustive-deps')
+  const currentTrackEffect = effectEnd < 0 ? '' : app.slice(Math.max(0, effectEnd - 350), effectEnd)
 
   assert.match(app, /<audio[\s\S]*?preload="none"/)
   assert.match(currentTrackEffect, /if \(!isPlaying\) return\s+audio\.load\(\)/)
@@ -116,4 +116,16 @@ test('an unplayable track clears stale system media progress', async () => {
   )
 
   assert.match(positionEffect, /if \(position === null\)[\s\S]*?navigator\.mediaSession\.setPositionState\(\)/)
+})
+
+test('separate local lyrics imports update existing tracks without reloading audio', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const importLocalTracks = app.slice(app.indexOf('const importLocalTracks'), app.indexOf('const removeLocalTrack'))
+  const currentTrackEffect = app.slice(app.indexOf('const currentMediaKey'), app.indexOf('const inputMode'))
+
+  assert.match(importLocalTracks, /localFilesRef\.current\.entries\(\)/)
+  assert.match(importLocalTracks, /if \(matchedKeys\.size\)\s*{\s*queueRevisionRef\.current \+= 1/)
+  assert.match(importLocalTracks, /setCurrent\(\(previous\) => enableLocalLyrics\(previous\)\)/)
+  assert.match(currentTrackEffect, /const currentMediaKey = mediaLoadKey\(current\)/)
+  assert.match(currentTrackEffect, /}, \[currentMediaKey\]\)/)
 })

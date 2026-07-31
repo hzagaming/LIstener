@@ -73,7 +73,8 @@ test('the initial player does not initiate third-party audio loading', async () 
   const currentTrackEffect = effectEnd < 0 ? '' : app.slice(Math.max(0, effectEnd - 350), effectEnd)
 
   assert.match(app, /<audio[\s\S]*?preload="none"/)
-  assert.match(currentTrackEffect, /if \(!isPlaying\) return\s+audio\.load\(\)/)
+  assert.match(app, /const autoplayMediaKeyRef = useRef<string \| null>\(null\)/)
+  assert.match(currentTrackEffect, /if \(!autoplayMediaMatches\(autoplayMediaKeyRef\.current, currentMediaKey\)\) return[\s\S]*?audio\.load\(\)/)
 })
 
 test('narrow players preserve readable track metadata', async () => {

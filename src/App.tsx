@@ -8,7 +8,7 @@ import {
 import { playlists, tracks as initialTracks } from './data/catalog'
 import { localFileStem, readLocalLyrics, selectLocalAudioFiles } from './localFiles.mjs'
 import {
-  endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
+  autoplayMediaMatches, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
   playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
@@ -223,6 +223,7 @@ function App() {
   const identifyControllerRef = useRef<AbortController | null>(null)
   const lyricsControllerRef = useRef<AbortController | null>(null)
   const playRequestRef = useRef(0)
+  const autoplayMediaKeyRef = useRef<string | null>(null)
   const queueRevisionRef = useRef(0)
   const searchRequestRef = useRef(0)
   const identifyRequestRef = useRef(0)
@@ -436,7 +437,8 @@ function App() {
     const audio = audioRef.current
     if (!audio) return
     audio.volume = volume
-    if (!isPlaying) return
+    if (!autoplayMediaMatches(autoplayMediaKeyRef.current, currentMediaKey)) return
+    autoplayMediaKeyRef.current = null
     audio.load()
     attemptPlayback(audio)
   }, [currentMediaKey]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -530,6 +532,7 @@ function App() {
     }
     if (currentKey === key) {
       if (current.audioUrl !== track.audioUrl) {
+        autoplayMediaKeyRef.current = mediaLoadKey(track)
         setCurrent(track)
         setProgress(0)
         setDuration(initialPlaybackDuration(track))
@@ -547,6 +550,7 @@ function App() {
       else if (audio.paused) attemptPlayback(audio)
       return
     }
+    autoplayMediaKeyRef.current = mediaLoadKey(track)
     setCurrent(track)
     setProgress(0)
     setDuration(initialPlaybackDuration(track))

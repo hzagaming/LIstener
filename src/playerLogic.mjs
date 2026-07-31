@@ -18,6 +18,10 @@ export const shouldApplyEndedAction = (action) => action !== 'ignore'
 
 export const mediaLoadKey = (track) => JSON.stringify([track.source, track.id, track.audioUrl])
 
+export const autoplayMediaMatches = (requestedKey, currentKey) => (
+  Boolean(requestedKey) && requestedKey === currentKey
+)
+
 export const removalFocusIndex = (removedIndex, remainingLength) => (
   remainingLength > 0 ? Math.min(Math.max(removedIndex, 0), remainingLength - 1) : -1
 )

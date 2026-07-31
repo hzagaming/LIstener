@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
+  autoplayMediaMatches, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
   playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
@@ -48,6 +48,13 @@ test('gives distinct media loads an identity beyond their shared URL', () => {
   const sharedUrl = 'https://audio.example/shared.mp3'
   assert.notEqual(mediaLoadKey(track('1', 'full', sharedUrl)), mediaLoadKey(track('2', 'full', sharedUrl)))
   assert.notEqual(mediaLoadKey(track('1', 'full', sharedUrl)), mediaLoadKey(track('1', 'full', `${sharedUrl}?refresh=1`)))
+})
+
+test('autoplays only the media load explicitly requested by the user', () => {
+  const currentKey = mediaLoadKey(track('2', 'full', 'https://audio.example/2.mp3'))
+  assert.equal(autoplayMediaMatches(currentKey, currentKey), true)
+  assert.equal(autoplayMediaMatches(null, currentKey), false)
+  assert.equal(autoplayMediaMatches(mediaLoadKey(track('1')), currentKey), false)
 })
 
 test('keeps removal focus on the nearest remaining item', () => {

@@ -21,6 +21,7 @@ export declare const endedPlaybackAction: (state: {
 }) => 'ignore' | 'stop' | 'restart' | 'next'
 export declare const shouldApplyEndedAction: (action: 'ignore' | 'stop' | 'restart' | 'next') => boolean
 export declare const mediaLoadKey: (track: TrackLike) => string
+export declare const autoplayMediaMatches: (requestedKey: string | null, currentKey: string) => boolean
 export declare const removalFocusIndex: (removedIndex: number, remainingLength: number) => number
 export declare const focusTrapTargetIndex: (activeIndex: number, length: number, backwards: boolean) => number
 export declare const playbackVisualState: (state: {

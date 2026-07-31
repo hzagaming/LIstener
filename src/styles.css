@@ -95,7 +95,8 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .secondary-button:hover { border-color: var(--ink); color: var(--ink); }
 .secondary-button svg { width: 14px; }
 .visually-hidden { position: fixed !important; width: 1px !important; height: 1px !important; opacity: 0 !important; pointer-events: none !important; }
-.text-button, .section-heading > button { border: 0; background: none; display: flex; align-items: center; gap: 8px; font-size: 10px; color: #736d64; cursor: pointer; text-decoration: none; }
+.text-button, .section-heading > button { border: 0; background: none; display: flex; align-items: center; gap: 8px; font-size: 10px; color: #6f6b63; cursor: pointer; text-decoration: none; }
+.hero .text-button { color: #514c45; }
 .text-button svg, .section-heading > button svg { width: 14px; }
 .hero__art { position: relative; min-height: 360px; background: linear-gradient(135deg, transparent 47%, rgba(56,54,49,.1) 47.2%, transparent 47.6%), radial-gradient(circle at 60% 42%, #e5784d 0 9%, transparent 9.2%); }
 .hero__sun { position: absolute; width: 270px; height: 270px; border: 1px solid rgba(46,44,40,.19); border-radius: 50%; right: 13%; top: 13%; }
@@ -116,8 +117,8 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .section-heading > div { display: flex; align-items: center; gap: 13px; }
 .section-heading h2 { margin: 0; font: 700 20px var(--font-display); }
 .section-heading h2:focus-visible { outline: 2px solid var(--orange); outline-offset: 5px; }
-.section-index { font: italic 700 10px var(--font-display); color: var(--orange); position: relative; }
-.section-index::after { content: ''; height: 1px; width: 17px; background: var(--orange); position: absolute; left: 0; bottom: -4px; }
+.section-index { font: italic 700 10px var(--font-display); color: #b94724; position: relative; }
+.section-index::after { content: ''; height: 1px; width: 17px; background: currentColor; position: absolute; left: 0; bottom: -4px; }
 .track-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(12px, 1.6vw, 24px); }
 .track-card { min-width: 0; position: relative; }
 .track-card__number { position: absolute; top: 8px; left: 8px; z-index: 2; color: rgba(255,255,255,.8); font: 9px var(--font-display); }
@@ -147,7 +148,7 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .playlist-card__play svg { width: 13px; }
 .playlist-card:hover .playlist-card__play, .playlist-card:focus-visible .playlist-card__play { opacity: 1; transform: none; }
 .playlist-card__copy { display: grid; grid-template-columns: 18px 1fr; gap: 10px; padding: 11px 0 22px; border-bottom: 1px solid var(--line); }
-.playlist-card__copy > span { color: #b2aea4; font: italic 8px var(--font-display); padding-top: 2px; }
+.playlist-card__copy > span { color: #6f6b63; font: italic 8px var(--font-display); padding-top: 2px; }
 .playlist-card__copy p { font-size: 11px; color: var(--muted); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .cover { position: relative; overflow: hidden; background: #b65e42; display: grid; place-items: center; }
@@ -210,7 +211,7 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .track-row { min-height: 66px; display: grid; grid-template-columns: 40px 42px minmax(150px, 1.25fr) minmax(105px, .8fr) 105px 45px minmax(190px, auto); gap: 13px; align-items: center; border-bottom: 1px solid var(--line); transition: background .15s; }
 .track-row:hover { background: rgba(255,255,255,.26); }
 .track-row--current { background: rgba(237,108,59,.045); }
-.track-row__play { min-width: 40px; height: 100%; border: 0; background: none; cursor: pointer; color: #99958b; position: relative; }
+.track-row__play { min-width: 40px; height: 100%; border: 0; background: none; cursor: pointer; color: #6f6b63; position: relative; }
 .track-row__play span { font: italic 9px var(--font-display); }
 .track-row__play svg { width: 13px; display: none; }
 .track-row:hover .track-row__play span, .track-row--current .track-row__play span, .track-row__play:focus-visible span { display: none; }
@@ -309,6 +310,8 @@ input[type='range']::-webkit-slider-thumb { appearance: none; width: 12px; heigh
 input[type='range']:hover::-webkit-slider-thumb, input[type='range']:focus-visible::-webkit-slider-thumb { opacity: 1; }
 input[type='range']::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: var(--ink); }
 input[type='range']:disabled { cursor: not-allowed; opacity: .4; }
+input[type='range']:disabled::-webkit-slider-thumb { opacity: 0; }
+input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
 .player__tools { justify-self: end; display: flex; align-items: center; gap: 6px; width: auto; }
 .player__tools svg { width: 14px; color: #817d74; }
 .player__tools input { width: 70px; }

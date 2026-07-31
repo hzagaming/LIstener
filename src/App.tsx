@@ -232,6 +232,7 @@ function App() {
   const queueTriggerRef = useRef<HTMLElement | null>(null)
   const dialogTriggerRef = useRef<HTMLElement | null>(null)
   const mobileMenuRef = useRef<HTMLButtonElement>(null)
+  const mobileCloseRef = useRef<HTMLButtonElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const playlistsHeadingRef = useRef<HTMLHeadingElement>(null)
   const likedHeadingRef = useRef<HTMLHeadingElement>(null)
@@ -423,6 +424,10 @@ function App() {
     document.addEventListener('keydown', trapFocus)
     return () => document.removeEventListener('keydown', trapFocus)
   }, [lyricsTrack, mobileNavOpen, playlistModalTrack, queueOpen])
+
+  useEffect(() => {
+    if (mobileNavOpen) mobileCloseRef.current?.focus()
+  }, [mobileNavOpen])
 
   useEffect(() => {
     if (playlistModalTrack === undefined && !lyricsTrack && !queueOpen && !mobileNavOpen) return
@@ -1103,8 +1108,8 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside id="mobile-navigation" className={`sidebar ${mobileNavOpen ? 'sidebar--open' : ''}`} role={mobileNavOpen ? 'dialog' : undefined} aria-modal={mobileNavOpen ? 'true' : undefined} aria-label="侧边导航" {...(queueOpen || dialogOpen ? { inert: '' } : {})}>
-        <button className="sidebar__close icon-button" onClick={closeMobileNav} aria-label="关闭菜单"><X /></button>
+      <div id="mobile-navigation" className={`sidebar ${mobileNavOpen ? 'sidebar--open' : ''}`} role={mobileNavOpen ? 'dialog' : 'complementary'} aria-modal={mobileNavOpen ? 'true' : undefined} aria-label="侧边导航" {...(queueOpen || dialogOpen ? { inert: '' } : {})}>
+        <button ref={mobileCloseRef} className="sidebar__close icon-button" onClick={closeMobileNav} aria-label="关闭菜单"><X /></button>
         <button className="brand" onClick={() => navigate('discover')}>
           <span className="brand__symbol"><Waves /></span>
           <span>Listener</span>
@@ -1128,7 +1133,7 @@ function App() {
           <p>{providerChecking ? '正在检查聚合服务…' : providerStatus.online ? providerStatus.sources.map(sourceLabel).join(' · ') : '聚合服务暂时离线'}</p>
           <div className={`source-card__dots ${providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`}><i /></div>
         </div>
-      </aside>
+      </div>
 
       {mobileNavOpen && <button className="scrim" tabIndex={-1} onClick={closeMobileNav} aria-label="关闭菜单" />}
 
@@ -1387,7 +1392,7 @@ function App() {
 
       {queueOpen && (
         <>
-          <aside className="queue-drawer queue-drawer--open" role="dialog" aria-modal="true" aria-label="播放队列">
+          <div className="queue-drawer queue-drawer--open" role="dialog" aria-modal="true" aria-label="播放队列">
             <div className="queue-drawer__header"><div><span className="eyebrow">UP NEXT</span><h2>播放队列</h2></div><button className="icon-button" aria-label="关闭播放队列" autoFocus onClick={closeQueue}><X /></button></div>
             <div className="queue-drawer__count"><span>共 {queue.length} 首</span><button disabled={!queue.length} onClick={clearQueue}>停止并清空</button></div>
             <div className="queue-drawer__list">
@@ -1403,7 +1408,7 @@ function App() {
               })}
               {!queue.length && <div className="compact-empty"><ListMusic /><span>播放队列为空</span></div>}
             </div>
-          </aside>
+          </div>
           <button className="queue-scrim" tabIndex={-1} onClick={closeQueue} aria-label="关闭播放队列" />
         </>
       )}

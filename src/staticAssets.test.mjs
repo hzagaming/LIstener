@@ -77,6 +77,25 @@ test('the initial player does not initiate third-party audio loading', async () 
   assert.match(currentTrackEffect, /if \(!autoplayMediaMatches\(autoplayMediaKeyRef\.current, currentMediaKey\)\) return[\s\S]*?audio\.load\(\)/)
 })
 
+test('mobile and queue dialogs keep valid semantics and move focus inside', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+
+  assert.match(app, /const mobileCloseRef = useRef<HTMLButtonElement>\(null\)/)
+  assert.match(app, /if \(mobileNavOpen\) mobileCloseRef\.current\?\.focus\(\)/)
+  assert.match(app, /<div id="mobile-navigation"[\s\S]*?role=\{mobileNavOpen \? 'dialog' : 'complementary'\}/)
+  assert.match(app, /<div className="queue-drawer queue-drawer--open" role="dialog"/)
+})
+
+test('small controls remain readable and disabled progress has no stray thumb', async () => {
+  const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+
+  assert.match(styles, /\.hero \.text-button\s*\{[^}]*color:\s*#514c45/)
+  assert.match(styles, /\.section-index\s*\{[^}]*color:\s*#b94724/)
+  assert.match(styles, /\.playlist-card__copy > span\s*\{[^}]*color:\s*#6f6b63/)
+  assert.match(styles, /\.track-row__play\s*\{[^}]*color:\s*#6f6b63/)
+  assert.match(styles, /input\[type='range'\]:disabled::-(?:webkit-slider-thumb|moz-range-thumb)\s*\{[^}]*opacity:\s*0/)
+})
+
 test('narrow players preserve readable track metadata', async () => {
   const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
   const mobile = styles.slice(styles.indexOf('@media (max-width: 820px)'), styles.indexOf('@media (max-width: 420px)'))

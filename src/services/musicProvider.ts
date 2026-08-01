@@ -3,6 +3,7 @@ import { abortableDelay, createRequestSignal } from '../requestPolicy.mjs'
 import { createSearchFallbackError } from '../searchLogic.mjs'
 import { isMusicIdentification, isMusicSource, isTrack } from '../types/music'
 import { isSafeUrl } from '../urlPolicy.mjs'
+import { createPublicAppleProvider } from './publicAppleProvider.mjs'
 import type {
   DownloadDescriptor, Lyrics, MusicIdentification, MusicProvider, MusicSource,
   ProviderStatus, SourceCapabilities, Track,
@@ -202,6 +203,6 @@ class ApiProvider implements MusicProvider {
 
 const demoProvider = new DemoProvider()
 export const musicProvider: MusicProvider = import.meta.env.VITE_STATIC_DEMO === 'true'
-  ? demoProvider
+  ? createPublicAppleProvider({ fallback: demoProvider })
   : new ApiProvider(import.meta.env.VITE_MUSIC_API_BASE?.trim() || window.location.origin, demoProvider)
 export const sourceLabel = (source: MusicSource) => labels[source]

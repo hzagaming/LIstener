@@ -23,11 +23,13 @@ test('the production build targets the GitHub Pages project path', async () => {
   assert.equal(preview?.config.base, '/LIstener/')
 })
 
-test('GitHub Pages deploys dist without probing an unavailable API', async () => {
+test('GitHub Pages deploys public search without probing an unavailable Node API', async () => {
   const workflow = await readFile(new URL('../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8')
+  const provider = await readFile(new URL('./services/musicProvider.ts', import.meta.url), 'utf8')
 
   assert.match(workflow, /path:\s*\.\/dist/)
   assert.match(workflow, /VITE_STATIC_DEMO:\s*['"]true['"]/)
+  assert.match(provider, /VITE_STATIC_DEMO === 'true'\s*\? createPublicAppleProvider\(\{ fallback: demoProvider \}\)/)
   assert.match(workflow, /actions\/checkout@v7/)
   assert.match(workflow, /actions\/setup-node@v7/)
   assert.match(workflow, /actions\/configure-pages@v5/)

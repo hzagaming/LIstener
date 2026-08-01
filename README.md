@@ -2,7 +2,7 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、本地音乐、播放队列和按来源授权的歌词与下载能力。
 
-当前版本：`0.4.14`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.4.15`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
@@ -29,13 +29,13 @@ npm run build
 
 ## GitHub Pages
 
-推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 版本使用静态演示数据，不请求无法在 GitHub Pages 运行的 Node API；本地开发和其他后端部署不受影响。
+推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 无法运行 Node API，因此直接使用无需密钥且支持浏览器跨域请求的 Apple Music 公共检索与试听；网络异常时才退回演示曲库。本地开发和其他后端部署仍使用可扩展的服务端聚合接口。
 
 仓库的 **Settings → Pages → Build and deployment → Source** 必须选择 **GitHub Actions**。如果选择从 `main` 分支发布，GitHub 会在 Actions 部署后再次用源码覆盖站点，导致 `/src/main.tsx` 和 `/favicon.svg` 404；部署后的线上冒烟检查会将这种错误配置标记为失败。
 
 ## 接入音乐源
 
-页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和可用试听；没有试听的合法元数据仍会保留并标记为不可播放。MusicBrainz 可提供开放录音元数据，Audius 可提供创作者公开音频，网易云仅作为区域相关的实验元数据来源。所有真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。前端演示回退位于 `src/services/musicProvider.ts`。
+页面只依赖标准化的 `Track` 数据。音乐源通常运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和可用试听；没有试听的合法元数据仍会保留并标记为不可播放。MusicBrainz 可提供开放录音元数据，Audius 可提供创作者公开音频，网易云仅作为区域相关的实验元数据来源。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
 
 地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、Apple Music、MusicBrainz 和 Audius API 地址/ID。解析只识别格式，不代表对应平台已经获得搜索、播放或下载授权；健康接口会返回当前实际连接的来源和能力。
 

@@ -26,10 +26,14 @@ test('the production build targets the GitHub Pages project path', async () => {
 test('GitHub Pages deploys public search without probing an unavailable Node API', async () => {
   const workflow = await readFile(new URL('../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8')
   const provider = await readFile(new URL('./services/musicProvider.ts', import.meta.url), 'utf8')
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
 
   assert.match(workflow, /path:\s*\.\/dist/)
-  assert.match(workflow, /VITE_STATIC_DEMO:\s*['"]true['"]/)
-  assert.match(provider, /VITE_STATIC_DEMO === 'true'\s*\? createPublicAppleProvider\(\{ fallback: demoProvider \}\)/)
+  assert.match(workflow, /VITE_PUBLIC_APPLE:\s*['"]true['"]/)
+  assert.doesNotMatch(workflow, /VITE_STATIC_DEMO/)
+  assert.match(provider, /VITE_PUBLIC_APPLE === 'true'\s*\? createPublicAppleProvider\(\{ fallback: demoProvider \}\)/)
+  assert.match(app, /const publicAppleMode = import\.meta\.env\.VITE_PUBLIC_APPLE === 'true'/)
+  assert.match(app, /const identifiableSources: MusicSource\[\] = publicAppleMode \? \['apple'\] :/)
   assert.match(workflow, /actions\/checkout@v7/)
   assert.match(workflow, /actions\/setup-node@v7/)
   assert.match(workflow, /actions\/configure-pages@v5/)
@@ -95,6 +99,7 @@ test('small controls remain readable and disabled progress has no stray thumb', 
   assert.match(styles, /\.section-index\s*\{[^}]*color:\s*#b94724/)
   assert.match(styles, /\.playlist-card__copy > span\s*\{[^}]*color:\s*#6f6b63/)
   assert.match(styles, /\.track-row__play\s*\{[^}]*color:\s*#6f6b63/)
+  assert.match(styles, /\.player__state\s*\{[^}]*color:\s*#ad3e1f/)
   assert.match(styles, /input\[type='range'\]:disabled::-(?:webkit-slider-thumb|moz-range-thumb)\s*\{[^}]*opacity:\s*0/)
 })
 
@@ -104,6 +109,13 @@ test('narrow players preserve readable track metadata', async () => {
 
   assert.match(styles, /@media\s*\(max-width:\s*350px\)[\s\S]*?\.player__track \.cover\s*\{[^}]*display:\s*none/)
   assert.match(mobile, /\.track-row__actions\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/)
+})
+
+test('narrow public search headings remain on one readable line', async () => {
+  const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+  const mobile = styles.slice(styles.indexOf('@media (max-width: 820px)'), styles.indexOf('@media (max-width: 420px)'))
+
+  assert.match(mobile, /\.search-hero h1\s*\{[^}]*font-size:\s*clamp\(34px,\s*10\.5vw,\s*44px\)[^}]*white-space:\s*nowrap/)
 })
 
 test('ID resolution aborts an active keyword search', async () => {

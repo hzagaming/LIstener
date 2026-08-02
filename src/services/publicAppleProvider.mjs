@@ -2,6 +2,7 @@ import { createRequestSignal } from '../requestPolicy.mjs'
 import { createSearchFallbackError } from '../searchLogic.mjs'
 
 const API_ORIGIN = 'https://itunes.apple.com'
+const MAX_RESPONSE_BYTES = 2_097_152
 const capabilities = { search: true, playback: true, lyrics: false, download: false }
 
 const allowedHttpsUrl = (value, rootHost) => {
@@ -43,19 +44,50 @@ const normalizeSong = (song, country) => {
   }
 }
 
+const identifyApple = (input, preferredSource) => {
+  const value = typeof input === 'string' ? input.normalize('NFKC').trim() : ''
+  if (!value || value.length > 2_048) return null
+  if (preferredSource) {
+    if (preferredSource !== 'apple' || !/^\d+$/.test(value)) return null
+    return { source: 'apple', id: value, canonicalUrl: `https://music.apple.com/cn/song/${value}` }
+  }
+
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hostname !== 'music.apple.com') return null
+    const id = url.searchParams.get('i') ?? /^\/[^/]+\/song\/(?:[^/]+\/)?(\d+)\/?$/i.exec(url.pathname)?.[1]
+    return id && /^\d+$/.test(id)
+      ? { source: 'apple', id, canonicalUrl: `https://music.apple.com/cn/song/${id}` }
+      : null
+  } catch {
+    return null
+  }
+}
+
 export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallback, country = 'CN' } = {}) => {
   if (typeof fetchImpl !== 'function') throw new Error('fetch implementation is required')
   if (!fallback) throw new Error('fallback provider is required')
+  const normalizedCountry = String(country).trim().toLocaleUpperCase()
+  if (!/^[A-Z]{2}$/.test(normalizedCountry)) throw new Error('valid Apple country is required')
 
-  const request = async (pathname, parameters, signal) => {
+  const requestUrl = (pathname, parameters) => {
     const url = new URL(pathname, API_ORIGIN)
     for (const [key, value] of Object.entries(parameters)) url.searchParams.set(key, String(value))
-    const response = await fetchImpl(url, {
+    return url
+  }
+
+  const request = async (pathname, parameters, signal, timeoutMs = 10_000) => {
+    const response = await fetchImpl(requestUrl(pathname, parameters), {
       headers: { Accept: 'application/json' },
-      signal: createRequestSignal(signal, 10_000),
+      signal: createRequestSignal(signal, timeoutMs),
     })
-    if (!response.ok) throw new Error(`Apple search failed: ${response.status}`)
-    const payload = await response.json()
+    if (!response.ok) throw new Error(`Apple request failed: ${response.status}`)
+    const declaredSize = Number(response.headers.get('content-length'))
+    if (Number.isFinite(declaredSize) && declaredSize > MAX_RESPONSE_BYTES) throw new Error('Apple response is too large')
+    const body = await response.text()
+    if (new TextEncoder().encode(body).byteLength > MAX_RESPONSE_BYTES) throw new Error('Apple response is too large')
+    let payload
+    try { payload = JSON.parse(body) } catch { throw new Error('invalid Apple search response') }
     if (!Array.isArray(payload?.results)) throw new Error('invalid Apple search response')
     return payload.results
   }
@@ -63,8 +95,8 @@ export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallba
   const lookupApple = async (id, signal) => {
     const requestedId = String(id)
     if (!/^\d+$/.test(requestedId)) throw new Error('invalid Apple track id')
-    const songs = await request('/lookup', { id: requestedId, entity: 'song', country }, signal)
-    const track = songs.map((song) => normalizeSong(song, country)).find((song) => song?.id === requestedId)
+    const songs = await request('/lookup', { id: requestedId, entity: 'song', country: normalizedCountry }, signal)
+    const track = songs.map((song) => normalizeSong(song, normalizedCountry)).find((song) => song?.id === requestedId)
     if (!track) throw Object.assign(new Error('Apple track not found'), { code: 'TRACK_NOT_FOUND' })
     return track
   }
@@ -77,8 +109,8 @@ export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallba
       const term = String(query).trim()
       if (!term) return fallback.search(query, signal)
       try {
-        const songs = await request('/search', { term, entity: 'song', limit: 20, country }, signal)
-        return songs.map((song) => normalizeSong(song, country)).filter(Boolean)
+        const songs = await request('/search', { term, entity: 'song', limit: 20, country: normalizedCountry }, signal)
+        return songs.map((song) => normalizeSong(song, normalizedCountry)).filter(Boolean)
       } catch (error) {
         if (signal?.aborted) throw error
         const tracks = await fallback.search(query, signal)
@@ -96,8 +128,9 @@ export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallba
       return resolved.audioUrl
     },
 
-    identify(input, source, signal) {
-      return fallback.identify(input, source, signal)
+    async identify(input, source, signal) {
+      const match = identifyApple(input, source)
+      return match ?? fallback.identify(input, source, signal)
     },
 
     lookup(match, signal) {
@@ -112,8 +145,16 @@ export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallba
       return fallback.download(track, signal)
     },
 
-    async status() {
-      return { online: true, sources: ['apple'], capabilities: { apple: capabilities } }
+    async status(signal) {
+      try {
+        await request('/search', {
+          term: 'Listener', entity: 'song', limit: 1, country: normalizedCountry,
+        }, signal, 4_000)
+        return { online: true, sources: ['apple'], capabilities: { apple: capabilities } }
+      } catch (error) {
+        if (signal?.aborted) throw error
+        return fallback.status(signal)
+      }
     },
   }
 }

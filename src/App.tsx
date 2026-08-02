@@ -20,6 +20,8 @@ import type { MusicIdentification, MusicSource, Playlist, ProviderStatus, Track 
 
 type View = 'discover' | 'search' | 'library'
 type PlayMode = 'toggle' | 'play'
+const publicAppleMode = import.meta.env.VITE_PUBLIC_APPLE === 'true'
+const identifiableSources: MusicSource[] = publicAppleMode ? ['apple'] : musicSources.filter((source) => source !== 'demo' && source !== 'local')
 
 const readStoredTracks = (key: string, fallback: Track[], allowEmpty = false) => {
   try {
@@ -204,7 +206,7 @@ function App() {
       return 'off'
     }
   })
-  const [identifySource, setIdentifySource] = useState<MusicSource>('netease')
+  const [identifySource, setIdentifySource] = useState<MusicSource>(publicAppleMode ? 'apple' : 'netease')
   const [identification, setIdentification] = useState<MusicIdentification | null>(null)
   const [identificationHasDetails, setIdentificationHasDetails] = useState<boolean | null>(null)
   const [isIdentifying, setIsIdentifying] = useState(false)
@@ -1130,7 +1132,7 @@ function App() {
 
         <div className="source-card">
           <span><Sparkles /> {providerChecking ? '正在连接音乐源' : providerStatus.online ? `${providerStatus.sources.length} 个音乐源已接入` : '演示模式'}</span>
-          <p>{providerChecking ? '正在检查聚合服务…' : providerStatus.online ? providerStatus.sources.map(sourceLabel).join(' · ') : '聚合服务暂时离线'}</p>
+          <p>{providerChecking ? '正在检查音乐源…' : providerStatus.online ? providerStatus.sources.map(sourceLabel).join(' · ') : '音乐源暂时离线'}</p>
           <div className={`source-card__dots ${providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`}><i /></div>
         </div>
       </div>
@@ -1146,7 +1148,7 @@ function App() {
             <kbd>⌘/Ctrl K</kbd>
           </button>
           <div className="topbar__actions">
-            <div className="source-selector" role="status" aria-live="polite"><span className={`status-dot ${providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`} />{providerChecking ? '正在连接' : providerStatus.online ? '聚合服务在线' : '演示模式'}</div>
+            <div className="source-selector" role="status" aria-live="polite"><span className={`status-dot ${providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`} />{providerChecking ? '正在连接' : providerStatus.online ? '音乐源在线' : '演示模式'}</div>
             <div className="avatar" aria-hidden="true">L</div>
           </div>
         </header>
@@ -1159,7 +1161,7 @@ function App() {
                 <h1>音乐搜索器<br />让好歌更好找。</h1>
                 <p>多平台并行检索，真实标注试听、完整播放、歌词、下载权限与音质。</p>
                 <div className="hero__actions">
-                  <button className="primary-button" onClick={() => navigate('search')}><Search />多平台搜索</button>
+                  <button className="primary-button" onClick={() => navigate('search')}><Search />{publicAppleMode ? '搜索 Apple Music' : '多平台搜索'}</button>
                   <a className="text-button" href="https://qm.qq.com/q/WEGUnXZVSw" target="_blank" rel="noreferrer">加入官方 QQ 群 <ArrowRight /></a>
                 </div>
               </div>
@@ -1230,7 +1232,7 @@ function App() {
           <div className="page page--search">
             <div className="search-hero">
               <span className="eyebrow">SEARCH ACROSS SOURCES</span>
-              <h1>多平台搜索</h1>
+              <h1>{publicAppleMode ? 'Apple Music 搜索' : '多平台搜索'}</h1>
               <div className="search-input-wrap">
                 <Search aria-hidden="true" />
                 <input id="search-input" aria-label="搜索歌曲、歌手、专辑、音乐地址或 ID" aria-invalid={inputMode === 'too-long'} aria-describedby={inputMode === 'too-long' ? 'search-input-error search-guidance' : 'search-guidance'} maxLength={2048} value={query} onChange={(event) => updateQuery(event.target.value)} placeholder="歌曲、歌手、专辑、音乐地址或 ID……" />
@@ -1240,10 +1242,10 @@ function App() {
               {inputMode === 'too-long' && <div id="search-input-error" className="search-input-error" role="alert">搜索关键词最多 100 个字符；如果粘贴的是音乐地址，请保留完整的 http:// 或 https:// 前缀。</div>}
               <div className="id-resolver">
                 <select aria-label="音乐 ID 所属平台" value={identifySource} onChange={(event) => updateIdentifySource(event.target.value as MusicSource)}>
-                  {musicSources.filter((source) => source !== 'demo' && source !== 'local').map((source) => <option key={source} value={source}>{sourceLabel(source)}</option>)}
+                  {identifiableSources.map((source) => <option key={source} value={source}>{sourceLabel(source)}</option>)}
                 </select>
                 <button className="primary-button" disabled={isIdentifying} onClick={() => void identifyInput()}>{isIdentifying ? '正在识别…' : '解析地址 / ID'}</button>
-                <span id="search-guidance">平台地址与纯 ID 均需点击解析；纯 ID 请先选择平台。</span>
+                <span id="search-guidance">{publicAppleMode ? 'Pages 版本支持 Apple Music 地址与纯 ID。' : '平台地址与纯 ID 均需点击解析；纯 ID 请先选择平台。'}</span>
               </div>
               {identification && (
                 <div className="identification" role="status">

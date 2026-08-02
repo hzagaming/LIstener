@@ -2,7 +2,7 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、本地音乐、播放队列和按来源授权的歌词与下载能力。
 
-当前版本：`0.4.15`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.4.16`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
@@ -29,7 +29,7 @@ npm run build
 
 ## GitHub Pages
 
-推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 无法运行 Node API，因此直接使用无需密钥且支持浏览器跨域请求的 Apple Music 公共检索与试听；网络异常时才退回演示曲库。本地开发和其他后端部署仍使用可扩展的服务端聚合接口。
+推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 无法运行 Node API，因此直接使用无需密钥且支持浏览器跨域请求的 Apple Music 公共检索、地址/ID 解析与试听；公共响应受 2 MB 上限及媒体 Host 白名单约束，网络异常时才退回演示曲库。本地开发和其他后端部署仍使用可扩展的服务端聚合接口。
 
 仓库的 **Settings → Pages → Build and deployment → Source** 必须选择 **GitHub Actions**。如果选择从 `main` 分支发布，GitHub 会在 Actions 部署后再次用源码覆盖站点，导致 `/src/main.tsx` 和 `/favicon.svg` 404；部署后的线上冒烟检查会将这种错误配置标记为失败。
 

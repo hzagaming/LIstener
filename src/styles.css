@@ -292,7 +292,7 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .player__track > div:not(.cover) { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .player__track strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player__track span { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.player__state { color: #b94724; font: inherit; }
+.player__state { color: #ad3e1f; font: inherit; }
 .player--playing .player__track .cover__disc { animation: record-spin 8s linear infinite; }
 .player--loading .play-main { box-shadow: 0 0 0 5px rgba(237,108,59,.13); }
 @keyframes record-spin { to { transform: rotate(360deg); } }
@@ -366,6 +366,7 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .page--search, .page--library { padding: 0 18px 40px; }
   .search-hero { padding: 40px 0 32px; }
   .search-hero h1, .library-heading h1 { font-size: 44px; }
+  .search-hero h1 { font-size: clamp(34px, 10.5vw, 44px); white-space: nowrap; }
   .track-row { min-height: 84px; grid-template-columns: 40px 38px minmax(90px, 1fr); gap: 6px 9px; padding: 7px 0; }
   .track-row .cover { width: 38px; height: 38px; }
   .track-row__album, .track-row__badges, .track-row__duration { display: none; }

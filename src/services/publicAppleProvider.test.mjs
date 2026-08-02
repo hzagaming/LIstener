@@ -87,3 +87,55 @@ test('public Apple search exposes demo results only as an explicit degraded fall
     return true
   })
 })
+
+test('public Apple provider identifies supported Apple URLs and source-qualified IDs', async () => {
+  const provider = createPublicAppleProvider({ fallback, fetchImpl: async () => Response.json({ results: [] }) })
+
+  assert.deepEqual(await provider.identify('https://music.apple.com/cn/album/test/123?i=456'), {
+    source: 'apple', id: '456', canonicalUrl: 'https://music.apple.com/cn/song/456',
+  })
+  assert.deepEqual(await provider.identify(' １２３ ', 'apple'), {
+    source: 'apple', id: '123', canonicalUrl: 'https://music.apple.com/cn/song/123',
+  })
+  assert.equal(await provider.identify('https://music.apple.com.evil.example/cn/song/test/123'), null)
+})
+
+test('public Apple provider bounds response bodies and validates country configuration', async () => {
+  assert.throws(() => createPublicAppleProvider({ fallback, country: '../evil' }), /valid Apple country/)
+
+  const provider = createPublicAppleProvider({
+    fallback,
+    fetchImpl: async () => new Response('{"results":[]}', {
+      headers: { 'content-length': '3000000', 'content-type': 'application/json' },
+    }),
+  })
+  await assert.rejects(() => provider.search('oversized'), (error) => {
+    assert.deepEqual(searchFallbackTracks(error), [fallbackTrack])
+    return true
+  })
+})
+
+test('public Apple status probes the browser endpoint and falls back when offline', async () => {
+  let request
+  const provider = createPublicAppleProvider({
+    fallback,
+    fetchImpl: async (url, options) => {
+      request = { url: new URL(url), options }
+      return Response.json({ results: [] })
+    },
+  })
+
+  assert.deepEqual(await provider.status(), {
+    online: true,
+    sources: ['apple'],
+    capabilities: { apple: { search: true, playback: true, lyrics: false, download: false } },
+  })
+  assert.equal(request.url.origin, 'https://itunes.apple.com')
+  assert.equal(request.options.method, undefined)
+
+  const offline = createPublicAppleProvider({
+    fallback,
+    fetchImpl: async () => { throw new Error('offline') },
+  })
+  assert.deepEqual(await offline.status(), await fallback.status())
+})

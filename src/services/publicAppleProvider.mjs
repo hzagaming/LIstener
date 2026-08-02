@@ -77,11 +77,21 @@ export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallba
   }
 
   const request = async (pathname, parameters, signal, timeoutMs = 10_000) => {
-    const response = await fetchImpl(requestUrl(pathname, parameters), {
-      headers: { Accept: 'application/json' },
-      signal: createRequestSignal(signal, timeoutMs),
-    })
-    if (!response.ok) throw new Error(`Apple request failed: ${response.status}`)
+    let response
+    try {
+      response = await fetchImpl(requestUrl(pathname, parameters), {
+        headers: { Accept: 'application/json' },
+        signal: createRequestSignal(signal, timeoutMs),
+      })
+    } catch (error) {
+      if (signal?.aborted) throw error
+      throw Object.assign(error instanceof Error ? error : new Error('Apple network request failed'), { retryable: true })
+    }
+    if (!response.ok) {
+      throw Object.assign(new Error(`Apple request failed: ${response.status}`), {
+        retryable: response.status === 429 || response.status >= 500,
+      })
+    }
     const declaredSize = Number(response.headers.get('content-length'))
     if (Number.isFinite(declaredSize) && declaredSize > MAX_RESPONSE_BYTES) throw new Error('Apple response is too large')
     const body = await response.text()
@@ -92,10 +102,19 @@ export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallba
     return payload.results
   }
 
+  const requestWithRetry = async (...parameters) => {
+    try {
+      return await request(...parameters)
+    } catch (error) {
+      if (parameters[2]?.aborted || !error?.retryable) throw error
+      return request(...parameters)
+    }
+  }
+
   const lookupApple = async (id, signal) => {
     const requestedId = String(id)
     if (!/^\d+$/.test(requestedId)) throw new Error('invalid Apple track id')
-    const songs = await request('/lookup', { id: requestedId, entity: 'song', country: normalizedCountry }, signal)
+    const songs = await requestWithRetry('/lookup', { id: requestedId, entity: 'song', country: normalizedCountry }, signal)
     const track = songs.map((song) => normalizeSong(song, normalizedCountry)).find((song) => song?.id === requestedId)
     if (!track) throw Object.assign(new Error('Apple track not found'), { code: 'TRACK_NOT_FOUND' })
     return track
@@ -109,8 +128,16 @@ export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallba
       const term = String(query).trim()
       if (!term) return fallback.search(query, signal)
       try {
-        const songs = await request('/search', { term, entity: 'song', limit: 20, country: normalizedCountry }, signal)
-        return songs.map((song) => normalizeSong(song, normalizedCountry)).filter(Boolean)
+        const songs = await requestWithRetry('/search', { term, entity: 'song', limit: 20, country: normalizedCountry }, signal)
+        const normalized = songs.map((song) => normalizeSong(song, normalizedCountry)).filter(Boolean)
+        if (normalized.length || normalizedCountry === 'US') return normalized
+        try {
+          const globalSongs = await requestWithRetry('/search', { term, entity: 'song', limit: 20, country: 'US' }, signal)
+          return globalSongs.map((song) => normalizeSong(song, 'US')).filter(Boolean)
+        } catch (error) {
+          if (signal?.aborted) throw error
+          return normalized
+        }
       } catch (error) {
         if (signal?.aborted) throw error
         const tracks = await fallback.search(query, signal)
@@ -147,7 +174,7 @@ export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallba
 
     async status(signal) {
       try {
-        await request('/search', {
+        await requestWithRetry('/search', {
           term: 'Listener', entity: 'song', limit: 1, country: normalizedCountry,
         }, signal, 4_000)
         return { online: true, sources: ['apple'], capabilities: { apple: capabilities } }

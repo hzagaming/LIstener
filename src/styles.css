@@ -207,6 +207,8 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .search-warning > span { display: flex; flex-direction: column; gap: 3px; }
 .search-warning strong { font-size: 12px; }
 .search-warning small { font-size: 11px; color: #745a39; }
+.search-warning button { min-width: 58px; min-height: 36px; margin-left: auto; border: 1px solid #9b7040; background: transparent; color: #664825; font-weight: 700; cursor: pointer; }
+.search-warning button:hover { background: rgba(102,72,37,.08); }
 .track-list { border-top: 1px solid var(--line); }
 .track-row { min-height: 66px; display: grid; grid-template-columns: 40px 42px minmax(150px, 1.25fr) minmax(105px, .8fr) 105px 45px minmax(190px, auto); gap: 13px; align-items: center; border-bottom: 1px solid var(--line); transition: background .15s; }
 .track-row:hover { background: rgba(255,255,255,.26); }

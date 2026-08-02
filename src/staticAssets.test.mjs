@@ -31,8 +31,10 @@ test('GitHub Pages deploys public search without probing an unavailable Node API
   assert.match(workflow, /path:\s*\.\/dist/)
   assert.match(workflow, /VITE_PUBLIC_APPLE:\s*['"]true['"]/)
   assert.doesNotMatch(workflow, /VITE_STATIC_DEMO/)
-  assert.match(provider, /VITE_PUBLIC_APPLE === 'true'\s*\? createPublicAppleProvider\(\{ fallback: demoProvider \}\)/)
-  assert.match(app, /const publicAppleMode = import\.meta\.env\.VITE_PUBLIC_APPLE === 'true'/)
+  assert.match(provider, /const publicAppleProvider = createPublicAppleProvider\(\{ fallback: demoProvider \}\)/)
+  assert.match(provider, /export const publicAppleMode = import\.meta\.env\.VITE_PUBLIC_APPLE === 'true' \|\| !apiBase/)
+  assert.match(provider, /publicAppleMode\s*\? publicAppleProvider\s*:\s*new ApiProvider\(apiBase, publicAppleProvider\)/)
+  assert.match(app, /import \{ musicProvider, publicAppleMode, sourceLabel \}/)
   assert.match(app, /const identifiableSources: MusicSource\[\] = publicAppleMode \? \['apple'\] :/)
   assert.match(workflow, /actions\/checkout@v7/)
   assert.match(workflow, /actions\/setup-node@v7/)
@@ -126,6 +128,15 @@ test('ID resolution aborts an active keyword search', async () => {
   assert.match(app, /const searchControllerRef = useRef<AbortController \| null>\(null\)/)
   assert.match(searchEffect, /searchControllerRef\.current = controller/)
   assert.match(identifyInput, /searchControllerRef\.current\?\.abort\(\)/)
+})
+
+test('degraded searches distinguish public results and expose an explicit retry', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+
+  assert.match(app, /const \[searchRevision, setSearchRevision\] = useState\(0\)/)
+  assert.match(app, /}, \[query, searchRevision\]\)/)
+  assert.match(app, /聚合服务离线，已切换公共搜索/)
+  assert.match(app, /onClick=\{\(\) => setSearchRevision\(\(value\) => value \+ 1\)\}/)
 })
 
 test('playlist delete confirmation expires automatically', async () => {

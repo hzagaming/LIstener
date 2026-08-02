@@ -13,14 +13,13 @@ import {
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 import { searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
-import { musicProvider, sourceLabel } from './services/musicProvider'
+import { musicProvider, publicAppleMode, sourceLabel } from './services/musicProvider'
 import { isPlaylist, isTrack, musicSources, trackKey } from './types/music'
 import { isSafeUrl } from './urlPolicy.mjs'
 import type { MusicIdentification, MusicSource, Playlist, ProviderStatus, Track } from './types/music'
 
 type View = 'discover' | 'search' | 'library'
 type PlayMode = 'toggle' | 'play'
-const publicAppleMode = import.meta.env.VITE_PUBLIC_APPLE === 'true'
 const identifiableSources: MusicSource[] = publicAppleMode ? ['apple'] : musicSources.filter((source) => source !== 'demo' && source !== 'local')
 
 const readStoredTracks = (key: string, fallback: Track[], allowEmpty = false) => {
@@ -175,6 +174,7 @@ function App() {
   const [resultQuery, setResultQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [searchDegraded, setSearchDegraded] = useState(false)
+  const [searchRevision, setSearchRevision] = useState(0)
   const [sourceFilter, setSourceFilter] = useState<'all' | MusicSource>('all')
   const [queue, setQueue] = useState<Track[]>(() => playableTracks(readStoredTracks('listener.queue', initialTracks.slice(0, 6), true)))
   const [current, setCurrent] = useState<Track>(() => readStoredTrack('listener.current', initialTracks[0]))
@@ -495,7 +495,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [query])
+  }, [query, searchRevision])
 
   const currentKey = trackKey(current)
   const currentIndex = useMemo(() => queue.findIndex((track) => trackKey(track) === currentKey), [queue, currentKey])
@@ -504,6 +504,7 @@ function App() {
     [results, sourceFilter],
   )
   const resultSources = useMemo(() => [...new Set(results.map((track) => track.source))], [results])
+  const publicSearchFallback = searchDegraded && resultSources.includes('apple')
   const likedTracks = useMemo(() => [...liked.values()], [liked])
   const selectedPlaylist = useMemo(
     () => userPlaylists.find((playlist) => playlist.id === selectedPlaylistId) ?? null,
@@ -1262,8 +1263,8 @@ function App() {
               </div>
             </div>
             <section className="results-section">
-              {searchDegraded && <div className="search-warning" role="alert"><Sparkles /><span><strong>聚合服务异常，当前为演示结果</strong><small>真实音乐源暂时不可用，请稍后重试。</small></span></div>}
-              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : searchDegraded ? `演示结果 ${displayResults.length} 首` : `共 ${displayResults.length} 首`}</span></div>
+              {searchDegraded && <div className="search-warning" role="alert"><Sparkles /><span><strong>{publicSearchFallback ? '聚合服务离线，已切换公共搜索' : '聚合服务异常，当前为演示结果'}</strong><small>{publicSearchFallback ? '当前由 Apple Music 公共接口提供结果。' : '真实音乐源暂时不可用，请稍后重试。'}</small></span><button onClick={() => setSearchRevision((value) => value + 1)}>重试</button></div>}
+              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索结果 ${displayResults.length} 首` : searchDegraded ? `演示结果 ${displayResults.length} 首` : `共 ${displayResults.length} 首`}</span></div>
               <div className="track-list" role="list">
                 {displayResults.length ? displayResults.map((track, index) => (
                   <TrackRow
@@ -1281,7 +1282,7 @@ function App() {
                     onLyrics={() => void openLyrics(track)}
                     onDownload={() => void downloadTrack(track)}
                   />
-                )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : inputMode === 'too-long' ? '搜索词太长' : searchDegraded ? '聚合服务暂不可用' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : inputMode === 'too-long' ? '请缩短到 100 个字符以内，再重新搜索。' : searchDegraded ? '演示曲库里也没有匹配结果，请稍后重试真实搜索。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
+                )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : inputMode === 'too-long' ? '搜索词太长' : searchDegraded ? '聚合服务暂不可用' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : inputMode === 'too-long' ? '请缩短到 100 个字符以内，再重新搜索。' : searchDegraded ? '备用音乐源也没有匹配结果，请点击重试。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
               </div>
             </section>
           </div>

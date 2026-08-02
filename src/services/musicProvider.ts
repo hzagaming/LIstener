@@ -120,39 +120,55 @@ class ApiProvider implements MusicProvider {
       if (!directUrl) throw new Error('音源地址无效')
       return directUrl
     }
-    const url = new URL('/api/resolve', this.baseUrl)
-    url.searchParams.set('source', track.source)
-    url.searchParams.set('id', track.id)
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json' },
-      signal: createRequestSignal(signal, 10_000),
-    })
-    if (!response.ok) throw await apiError(response, `resolve failed: ${response.status}`)
-    const payload = await response.json() as { url?: string }
-    const resolvedUrl = mediaUrl(payload.url)
-    if (!resolvedUrl) throw new Error('invalid resolve response')
-    return resolvedUrl
+    try {
+      const url = new URL('/api/resolve', this.baseUrl)
+      url.searchParams.set('source', track.source)
+      url.searchParams.set('id', track.id)
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal: createRequestSignal(signal, 10_000),
+      })
+      if (!response.ok) throw await apiError(response, `resolve failed: ${response.status}`)
+      const payload = await response.json() as { url?: string }
+      const resolvedUrl = mediaUrl(payload.url)
+      if (!resolvedUrl) throw new Error('invalid resolve response')
+      return resolvedUrl
+    } catch (error) {
+      if (signal?.aborted) throw error
+      if (track.source === 'apple') return this.fallback.resolve(track, signal)
+      throw error
+    }
   }
 
   async identify(input: string, source?: MusicSource, signal?: AbortSignal): Promise<MusicIdentification | null> {
-    const url = new URL('/api/identify', this.baseUrl)
-    url.searchParams.set('input', input.trim())
-    if (source) url.searchParams.set('source', source)
-    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: createRequestSignal(signal, 6_000) })
-    if (!response.ok) throw new Error(`identify failed: ${response.status}`)
-    const payload = await response.json() as { match?: unknown }
-    return isMusicIdentification(payload.match) ? payload.match : null
+    try {
+      const url = new URL('/api/identify', this.baseUrl)
+      url.searchParams.set('input', input.trim())
+      if (source) url.searchParams.set('source', source)
+      const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: createRequestSignal(signal, 6_000) })
+      if (!response.ok) throw new Error(`identify failed: ${response.status}`)
+      const payload = await response.json() as { match?: unknown }
+      return isMusicIdentification(payload.match) ? payload.match : null
+    } catch (error) {
+      if (signal?.aborted) throw error
+      return this.fallback.identify(input, source, signal)
+    }
   }
 
   async lookup(match: MusicIdentification, signal?: AbortSignal): Promise<Track> {
-    const url = new URL('/api/track', this.baseUrl)
-    url.searchParams.set('source', match.source)
-    url.searchParams.set('id', match.id)
-    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: createRequestSignal(signal, 10_000) })
-    if (!response.ok) throw new Error(`lookup failed: ${response.status}`)
-    const payload = await response.json() as { track?: unknown }
-    if (!isTrack(payload.track)) throw new Error('invalid track response')
-    return payload.track
+    try {
+      const url = new URL('/api/track', this.baseUrl)
+      url.searchParams.set('source', match.source)
+      url.searchParams.set('id', match.id)
+      const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: createRequestSignal(signal, 10_000) })
+      if (!response.ok) throw new Error(`lookup failed: ${response.status}`)
+      const payload = await response.json() as { track?: unknown }
+      if (!isTrack(payload.track)) throw new Error('invalid track response')
+      return payload.track
+    } catch (error) {
+      if (signal?.aborted) throw error
+      return this.fallback.lookup(match, signal)
+    }
   }
 
   async lyrics(track: Track, signal?: AbortSignal): Promise<Lyrics> {
@@ -202,7 +218,10 @@ class ApiProvider implements MusicProvider {
 }
 
 const demoProvider = new DemoProvider()
-export const musicProvider: MusicProvider = import.meta.env.VITE_PUBLIC_APPLE === 'true'
-  ? createPublicAppleProvider({ fallback: demoProvider })
-  : new ApiProvider(import.meta.env.VITE_MUSIC_API_BASE?.trim() || window.location.origin, demoProvider)
+const publicAppleProvider = createPublicAppleProvider({ fallback: demoProvider })
+const apiBase = import.meta.env.VITE_MUSIC_API_BASE?.trim() ?? ''
+export const publicAppleMode = import.meta.env.VITE_PUBLIC_APPLE === 'true' || !apiBase
+export const musicProvider: MusicProvider = publicAppleMode
+  ? publicAppleProvider
+  : new ApiProvider(apiBase, publicAppleProvider)
 export const sourceLabel = (source: MusicSource) => labels[source]

@@ -2,22 +2,25 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、本地音乐、播放队列和按来源授权的歌词与下载能力。
 
-当前版本：`0.4.16`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.4.17`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
 需要 Node.js 18.17 或更高版本。
 
-分别启动聚合服务和前端：
+默认直接启动无需密钥的 Apple 公共搜索：
 
 ```bash
 npm install
-npm run dev:server
+npm run dev
 ```
 
-另开一个终端：
+需要多来源 Node 聚合服务时，先复制配置并分别启动后端和前端：
 
 ```bash
+cp .env.example .env.local
+npm run dev:server
+# 另开一个终端
 npm run dev
 ```
 
@@ -29,7 +32,7 @@ npm run build
 
 ## GitHub Pages
 
-推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 无法运行 Node API，因此直接使用无需密钥且支持浏览器跨域请求的 Apple Music 公共检索、地址/ID 解析与试听；公共响应受 2 MB 上限及媒体 Host 白名单约束，网络异常时才退回演示曲库。本地开发和其他后端部署仍使用可扩展的服务端聚合接口。
+推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 无法运行 Node API，因此直接使用无需密钥且支持浏览器跨域请求的 Apple Music 公共检索、地址/ID 解析与试听；公共响应受 2 MB 上限及媒体 Host 白名单约束，瞬时故障会重试一次，CN 无结果会补查 US，网络持续异常才退回演示曲库。本地默认同样使用公共搜索，显式配置 `VITE_MUSIC_API_BASE` 后才连接可扩展的服务端聚合接口。
 
 仓库的 **Settings → Pages → Build and deployment → Source** 必须选择 **GitHub Actions**。如果选择从 `main` 分支发布，GitHub 会在 Actions 部署后再次用源码覆盖站点，导致 `/src/main.tsx` 和 `/favicon.svg` 404；部署后的线上冒烟检查会将这种错误配置标记为失败。
 
@@ -39,7 +42,7 @@ npm run build
 
 地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、Apple Music、MusicBrainz 和 Audius API 地址/ID。解析只识别格式，不代表对应平台已经获得搜索、播放或下载授权；健康接口会返回当前实际连接的来源和能力。
 
-默认通过同源 `/api` 请求服务；开发环境由 Vite 代理到 `http://127.0.0.1:3000`。跨域部署时，复制 `.env.example` 为 `.env.local` 并配置 `VITE_MUSIC_API_BASE`。
+未配置 `VITE_MUSIC_API_BASE` 时直接使用 Apple 公共搜索，不会探测不存在的 `/api`。启用 Node 聚合服务时，复制 `.env.example` 为 `.env.local`；示例地址为 `http://127.0.0.1:3000`，跨域部署时改为实际 API Origin。
 
 接口：
 
@@ -61,7 +64,7 @@ npm run build
 
 完整响应格式见 [音乐 API 文档](./docs/music-api.md)。
 
-接口不可用时会自动回退到演示数据并明确显示服务异常，方便前后端独立开发且不会将故障伪装成零结果。
+Node 接口不可用时会先回退到 Apple 公共搜索，公共接口也持续不可用时才使用演示数据；页面会区分公共/演示结果并提供显式重试，不会将故障伪装成零结果。
 
 服务端默认限制每个客户端每分钟 60 次请求，最多同时调用 3 个 Provider，搜索结果缓存 30 秒，并对同来源重复记录去重。`.env.example` 列出了 Provider 白名单、Fixture/网易开关、超时、响应上限、一次重试、并发数、缓存 TTL 和 API 限流配置。服务端变量需由 shell 或部署平台注入，不会由 Node 自动读取 `.env.example`。
 

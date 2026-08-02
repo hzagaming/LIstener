@@ -139,3 +139,58 @@ test('public Apple status probes the browser endpoint and falls back when offlin
   })
   assert.deepEqual(await offline.status(), await fallback.status())
 })
+
+test('public Apple search retries one transient failure before degrading', async () => {
+  let calls = 0
+  const provider = createPublicAppleProvider({
+    fallback,
+    fetchImpl: async () => {
+      calls += 1
+      if (calls === 1) throw new TypeError('temporary network failure')
+      return Response.json({ results: [{ trackId: 789, trackName: 'Recovered', artistName: 'Artist' }] })
+    },
+  })
+
+  assert.equal((await provider.search('recovered'))[0].title, 'Recovered')
+  assert.equal(calls, 2)
+})
+
+test('public Apple search retries service failures but not ordinary client errors', async () => {
+  let serviceCalls = 0
+  const serviceRecovery = createPublicAppleProvider({
+    fallback,
+    fetchImpl: async () => ++serviceCalls === 1
+      ? new Response('', { status: 503 })
+      : Response.json({ results: [{ trackId: 790, trackName: 'Recovered service', artistName: 'Artist' }] }),
+  })
+  assert.equal((await serviceRecovery.search('service'))[0].title, 'Recovered service')
+  assert.equal(serviceCalls, 2)
+
+  let clientCalls = 0
+  const invalidRequest = createPublicAppleProvider({
+    fallback,
+    fetchImpl: async () => {
+      clientCalls += 1
+      return new Response('', { status: 400 })
+    },
+  })
+  await assert.rejects(() => invalidRequest.search('invalid'), (error) => searchFallbackTracks(error) !== null)
+  assert.equal(clientCalls, 1)
+})
+
+test('public Apple search checks the US storefront when the configured country is empty', async () => {
+  const countries = []
+  const provider = createPublicAppleProvider({
+    fallback,
+    fetchImpl: async (url) => {
+      const country = new URL(url).searchParams.get('country')
+      countries.push(country)
+      return Response.json({ results: country === 'US'
+        ? [{ trackId: 987, trackName: 'Global result', artistName: 'Artist' }]
+        : [] })
+    },
+  })
+
+  assert.equal((await provider.search('global'))[0].title, 'Global result')
+  assert.deepEqual(countries, ['CN', 'US'])
+})

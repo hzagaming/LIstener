@@ -157,14 +157,18 @@ test('public Apple search retries one transient failure before degrading', async
 
 test('public Apple search retries service failures but not ordinary client errors', async () => {
   let serviceCalls = 0
+  const delays = []
   const serviceRecovery = createPublicAppleProvider({
     fallback,
+    randomImpl: () => 0.5,
+    waitImpl: async (milliseconds) => { delays.push(milliseconds) },
     fetchImpl: async () => ++serviceCalls === 1
       ? new Response('', { status: 503 })
       : Response.json({ results: [{ trackId: 790, trackName: 'Recovered service', artistName: 'Artist' }] }),
   })
   assert.equal((await serviceRecovery.search('service'))[0].title, 'Recovered service')
   assert.equal(serviceCalls, 2)
+  assert.deepEqual(delays, [100])
 
   let clientCalls = 0
   const invalidRequest = createPublicAppleProvider({
@@ -176,6 +180,39 @@ test('public Apple search retries service failures but not ordinary client error
   })
   await assert.rejects(() => invalidRequest.search('invalid'), (error) => searchFallbackTracks(error) !== null)
   assert.equal(clientCalls, 1)
+
+  let serverCalls = 0
+  const serverError = createPublicAppleProvider({
+    fallback,
+    fetchImpl: async () => { serverCalls += 1; return new Response('', { status: 500 }) },
+  })
+  await assert.rejects(() => serverError.search('server'), (error) => searchFallbackTracks(error) !== null)
+  assert.equal(serverCalls, 1)
+})
+
+test('public Apple search cancels an undeclared streaming body above the byte limit', async () => {
+  let reads = 0
+  let cancelled = false
+  const chunk = new Uint8Array(1_048_576)
+  const provider = createPublicAppleProvider({
+    fallback,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: {
+        getReader: () => ({
+          read: async () => reads++ < 3 ? { done: false, value: chunk } : { done: true },
+          cancel: async () => { cancelled = true },
+        }),
+      },
+      text: async () => { throw new Error('streaming response must not use text()') },
+    }),
+  })
+
+  await assert.rejects(() => provider.search('oversized stream'), (error) => searchFallbackTracks(error) !== null)
+  assert.equal(cancelled, true)
+  assert.equal(reads, 3)
 })
 
 test('public Apple search checks the US storefront when the configured country is empty', async () => {

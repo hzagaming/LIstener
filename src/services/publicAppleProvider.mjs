@@ -1,8 +1,10 @@
-import { createRequestSignal } from '../requestPolicy.mjs'
+import { abortableDelay, createRequestSignal } from '../requestPolicy.mjs'
 import { createSearchFallbackError } from '../searchLogic.mjs'
 
 const API_ORIGIN = 'https://itunes.apple.com'
 const MAX_RESPONSE_BYTES = 2_097_152
+const RETRY_STATUSES = new Set([429, 502, 503, 504])
+const textDecoder = new TextDecoder()
 const capabilities = { search: true, playback: true, lyrics: false, download: false }
 
 const allowedHttpsUrl = (value, rootHost) => {
@@ -64,9 +66,52 @@ const identifyApple = (input, preferredSource) => {
   }
 }
 
-export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallback, country = 'CN' } = {}) => {
+const readLimitedText = async (response) => {
+  const declaredSize = Number(response.headers?.get?.('content-length'))
+  if (Number.isFinite(declaredSize) && declaredSize > MAX_RESPONSE_BYTES) {
+    await response.body?.cancel?.()
+    throw new Error('Apple response is too large')
+  }
+  if (!response.body?.getReader) {
+    const text = await response.text()
+    if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) throw new Error('Apple response is too large')
+    return text
+  }
+
+  const reader = response.body.getReader()
+  const chunks = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > MAX_RESPONSE_BYTES) {
+      await reader.cancel()
+      throw new Error('Apple response is too large')
+    }
+    chunks.push(value)
+  }
+  const body = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return textDecoder.decode(body)
+}
+
+export const createPublicAppleProvider = ({
+  fetchImpl = globalThis.fetch,
+  fallback,
+  country = 'CN',
+  retryDelayMs = 80,
+  waitImpl = abortableDelay,
+  randomImpl = Math.random,
+} = {}) => {
   if (typeof fetchImpl !== 'function') throw new Error('fetch implementation is required')
   if (!fallback) throw new Error('fallback provider is required')
+  if (!Number.isInteger(retryDelayMs) || retryDelayMs < 0 || retryDelayMs > 1_000) throw new Error('valid retry delay is required')
+  if (typeof waitImpl !== 'function' || typeof randomImpl !== 'function') throw new Error('valid retry helpers are required')
   const normalizedCountry = String(country).trim().toLocaleUpperCase()
   if (!/^[A-Z]{2}$/.test(normalizedCountry)) throw new Error('valid Apple country is required')
 
@@ -88,14 +133,12 @@ export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallba
       throw Object.assign(error instanceof Error ? error : new Error('Apple network request failed'), { retryable: true })
     }
     if (!response.ok) {
+      await response.body?.cancel?.()
       throw Object.assign(new Error(`Apple request failed: ${response.status}`), {
-        retryable: response.status === 429 || response.status >= 500,
+        retryable: RETRY_STATUSES.has(response.status),
       })
     }
-    const declaredSize = Number(response.headers.get('content-length'))
-    if (Number.isFinite(declaredSize) && declaredSize > MAX_RESPONSE_BYTES) throw new Error('Apple response is too large')
-    const body = await response.text()
-    if (new TextEncoder().encode(body).byteLength > MAX_RESPONSE_BYTES) throw new Error('Apple response is too large')
+    const body = await readLimitedText(response)
     let payload
     try { payload = JSON.parse(body) } catch { throw new Error('invalid Apple search response') }
     if (!Array.isArray(payload?.results)) throw new Error('invalid Apple search response')
@@ -107,6 +150,8 @@ export const createPublicAppleProvider = ({ fetchImpl = globalThis.fetch, fallba
       return await request(...parameters)
     } catch (error) {
       if (parameters[2]?.aborted || !error?.retryable) throw error
+      const random = Math.min(1, Math.max(0, Number(randomImpl()) || 0))
+      await waitImpl(retryDelayMs + Math.floor(random * 40), parameters[2])
       return request(...parameters)
     }
   }

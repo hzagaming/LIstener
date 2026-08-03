@@ -10,6 +10,7 @@ test('loads bounded music defaults without secrets', () => {
     enabledProviders: [],
     enableFixture: false,
     enableNetease: false,
+    musicBrainzContact: 'https://github.com/hzagaming/LIstener',
     providerTimeoutMs: 8_000,
     responseLimitBytes: 2_097_152,
     maxRetries: 1,
@@ -29,6 +30,7 @@ test('normalizes provider lists and explicit environment overrides', () => {
     MUSIC_ENABLED_PROVIDERS: ' apple, fixture,apple ',
     ENABLE_LOCAL_FIXTURE: 'true',
     ENABLE_NETEASE: 'true',
+    MUSICBRAINZ_CONTACT: 'ops@example.com',
     MUSIC_PROVIDER_TIMEOUT_MS: '1200',
     MUSIC_PROVIDER_RESPONSE_LIMIT_BYTES: '4096',
     MUSIC_MAX_RETRIES: '0',
@@ -43,11 +45,12 @@ test('normalizes provider lists and explicit environment overrides', () => {
   assert.deepEqual(config.enabledProviders, ['apple', 'fixture'])
   assert.equal(config.enableFixture, true)
   assert.equal(config.enableNetease, true)
+  assert.equal(config.musicBrainzContact, 'ops@example.com')
   assert.equal(config.maxRetries, 0)
   assert.equal(config.maxConcurrentProviders, 2)
 })
 
-test('rejects unsafe numeric configuration', () => {
+test('rejects unsafe configuration', () => {
   for (const [name, value] of [
     ['PORT', '0'],
     ['MUSIC_PROVIDER_TIMEOUT_MS', '999999'],
@@ -55,6 +58,7 @@ test('rejects unsafe numeric configuration', () => {
     ['MUSIC_MAX_RETRIES', '2'],
     ['MUSIC_MAX_CONCURRENT_PROVIDERS', '0'],
     ['MUSIC_API_RATE_LIMIT', 'NaN'],
+    ['MUSICBRAINZ_CONTACT', 'ops@example.com\nX-Test: injected'],
   ]) {
     assert.throws(() => readMusicConfig({ [name]: value }), new RegExp(`invalid ${name}`))
   }

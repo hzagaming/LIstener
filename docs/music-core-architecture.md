@@ -12,6 +12,7 @@
 
 ```text
 server/http.mjs                 API Controller 与兼容层
+server/dev.mjs                  本地 API 与 Vite 进程编排
 server/musicService.mjs         聚合、Provider Registry、缓存与能力门控
 server/providerHttpClient.mjs   HTTPS、Host 白名单、重定向、大小、重试、取消
 server/lyrics.mjs               纯文本与 LRC 标准化
@@ -59,6 +60,8 @@ HTTP validation
 ```
 
 任何 Provider 故障都不阻断其他来源，但残缺聚合不写正缓存。页码、来源和 schema 版本进入缓存 Key。
+
+本地 `npm run dev` 同时启动 Node API 与 Vite，开发前端通过同源 `/api` 代理使用默认启用的 Apple 与 MusicBrainz；GitHub Pages 生产构建显式使用浏览器安全的 Apple 公共适配器。
 
 ## 安全策略
 

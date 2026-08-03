@@ -1,13 +1,14 @@
 {
   "name": "listener",
   "private": true,
-  "version": "0.4.19",
+  "version": "0.4.20",
   "type": "module",
   "engines": {
     "node": ">=18.17"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "node server/dev.mjs",
+    "dev:client": "vite",
     "dev:server": "node --watch server/index.mjs",
     "build": "tsc --noEmit -p tsconfig.app.json && vite build",
     "preview": "vite preview",

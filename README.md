@@ -2,26 +2,23 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、本地音乐、播放队列和按来源授权的歌词与下载能力。
 
-当前版本：`0.4.19`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.4.20`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
 需要 Node.js 18.17 或更高版本。
 
-默认直接启动无需密钥的 Apple 公共搜索：
+默认一条命令同时启动 Node 聚合 API 与 Vite 前端，并接入 Apple 和 MusicBrainz 两个官方公开数据源：
 
 ```bash
 npm install
 npm run dev
 ```
 
-需要多来源 Node 聚合服务时，先复制配置并分别启动后端和前端：
+只需要静态 Apple 公共搜索、不启动 Node API 时：
 
 ```bash
-cp .env.example .env.local
-npm run dev:server
-# 另开一个终端
-npm run dev
+VITE_PUBLIC_APPLE=true npm run dev:client
 ```
 
 构建生产版本：
@@ -32,22 +29,22 @@ npm run build
 
 ## GitHub Pages
 
-推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 无法运行 Node API，因此直接使用无需密钥且支持浏览器跨域请求的 Apple Music 公共检索、地址/ID 解析与试听；公共响应受 2 MB 上限及媒体 Host 白名单约束，瞬时故障会重试一次，CN 无结果会补查 US，网络持续异常才退回演示曲库。本地默认同样使用公共搜索，显式配置 `VITE_MUSIC_API_BASE` 后才连接可扩展的服务端聚合接口。
+推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 无法运行 Node API，因此直接使用无需密钥且支持浏览器跨域请求的 Apple Music 公共检索、地址/ID 解析与试听；公共响应受 2 MB 上限及媒体 Host 白名单约束，瞬时故障会重试一次，CN 无结果会补查 US，网络持续异常才退回演示曲库。本地开发默认使用同源 Node 聚合 API。
 
 仓库的 **Settings → Pages → Build and deployment → Source** 必须选择 **GitHub Actions**。如果选择从 `main` 分支发布，GitHub 会在 Actions 部署后再次用源码覆盖站点，导致 `/src/main.tsx` 和 `/favicon.svg` 404；部署后的线上冒烟检查会将这种错误配置标记为失败。
 
 ## 接入音乐源
 
-页面只依赖标准化的 `Track` 数据。音乐源通常运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和可用试听；没有试听的合法元数据仍会保留并标记为不可播放。MusicBrainz 可提供开放录音元数据，Audius 可提供创作者公开音频，网易云仅作为区域相关的实验元数据来源。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
+页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和可用试听，并通过 `server/providers/musicbrainz.mjs` 补充 CC0 录音元数据；没有试听的合法元数据会保留并标记为不可播放。Audius 可提供创作者公开音频，网易云仅作为区域相关的实验元数据来源。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
 
 地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、Apple Music、MusicBrainz 和 Audius API 地址/ID。解析只识别格式，不代表对应平台已经获得搜索、播放或下载授权；健康接口会返回当前实际连接的来源和能力。
 
-未配置 `VITE_MUSIC_API_BASE` 时直接使用 Apple 公共搜索，不会探测不存在的 `/api`。启用 Node 聚合服务时，复制 `.env.example` 为 `.env.local`；示例地址为 `http://127.0.0.1:3000`，跨域部署时改为实际 API Origin。
+开发模式未配置 `VITE_MUSIC_API_BASE` 时通过 Vite 的同源 `/api` 代理连接本地聚合服务；生产构建未配置时直接使用 Apple 公共搜索，不会探测不存在的 `/api`。跨域部署 Node API 时，将 `VITE_MUSIC_API_BASE` 设置为实际 API Origin。
 
 接口：
 
 - `GET /api/search?q=关键词` → `{ "tracks": Track[] }`
-- `GET /api/health` → `{ "status": "ok", "sources": ["apple"], "capabilities": { "apple": { "search": true, "playback": true, "lyrics": false, "download": false } } }`
+- `GET /api/health` → `{ "status": "ok", "sources": ["apple", "musicbrainz"], "capabilities": { ... } }`
 - `GET /api/resolve?source=apple&id=歌曲ID` → `{ "url": "可播放地址" }`
 - `GET /api/identify?input=音乐地址` → `{ "match": { "source": "netease", "id": "歌曲ID", "canonicalUrl": "..." } }`
 - `GET /api/track?source=apple&id=歌曲ID` → `{ "track": Track }`
@@ -74,7 +71,7 @@ Node 接口不可用时会先回退到 Apple 公共搜索，公共接口也持�
 ENABLE_LOCAL_FIXTURE=true npm run server
 ```
 
-MusicBrainz 要求客户端提供可联系的应用标识，并限制为每秒最多一次请求。设置邮箱或网站地址后启用；该来源只提供 CC0 核心录音元数据，不提供音频：
+MusicBrainz 要求客户端提供可联系的应用标识，并限制为每秒最多一次请求。默认使用项目仓库地址作为联系标识，也可覆盖为维护邮箱或网站；该来源只提供 CC0 核心录音元数据，不提供音频：
 
 ```bash
 MUSICBRAINZ_CONTACT=ops@example.com npm run server

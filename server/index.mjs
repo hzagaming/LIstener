@@ -24,9 +24,9 @@ if (selected('apple')) {
     ...providerHttp,
   }))
 }
-if (selected('musicbrainz') && process.env.MUSICBRAINZ_CONTACT?.trim()) {
+if (selected('musicbrainz')) {
   providers.push(createMusicBrainzProvider({
-    contact: process.env.MUSICBRAINZ_CONTACT,
+    contact: config.musicBrainzContact,
     ...providerHttp,
   }))
 }

@@ -15,6 +15,12 @@ const boolean = (env, name) => {
   return raw === 'true'
 }
 
+const text = (env, name, fallback, maximum = 200) => {
+  const value = env[name]?.trim() || fallback
+  if (!value || value.length > maximum || /[\r\n]/.test(value)) throw new Error(`invalid ${name}`)
+  return value
+}
+
 const corsOrigin = (value) => {
   try {
     const url = new URL(value)
@@ -42,6 +48,7 @@ export const readMusicConfig = (env = process.env) => ({
   enabledProviders: providerList(env.MUSIC_ENABLED_PROVIDERS),
   enableFixture: boolean(env, 'ENABLE_LOCAL_FIXTURE'),
   enableNetease: boolean(env, 'ENABLE_NETEASE'),
+  musicBrainzContact: text(env, 'MUSICBRAINZ_CONTACT', 'https://github.com/hzagaming/LIstener'),
   providerTimeoutMs: integer(env, 'MUSIC_PROVIDER_TIMEOUT_MS', 8_000, 100, 30_000),
   responseLimitBytes: integer(env, 'MUSIC_PROVIDER_RESPONSE_LIMIT_BYTES', 2_097_152, 1_024, 10_485_760),
   maxRetries: integer(env, 'MUSIC_MAX_RETRIES', 1, 0, 1),

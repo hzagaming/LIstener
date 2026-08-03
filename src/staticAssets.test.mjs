@@ -44,6 +44,18 @@ test('GitHub Pages deploys public search without probing an unavailable Node API
   assert.match(workflow, /node src\/pagesSmokeCheck\.mjs/)
 })
 
+test('local development starts the aggregate API and routes the client through it', async () => {
+  const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  const provider = await readFile(new URL('./services/musicProvider.ts', import.meta.url), 'utf8')
+  const dev = await readFile(new URL('../server/dev.mjs', import.meta.url), 'utf8')
+
+  assert.equal(packageJson.scripts.dev, 'node server/dev.mjs')
+  assert.equal(packageJson.scripts['dev:client'], 'vite')
+  assert.match(provider, /const apiBase = configuredApiBase \|\| \(import\.meta\.env\.DEV \? window\.location\.origin : ''\)/)
+  assert.match(dev, /server\/index\.mjs/)
+  assert.match(dev, /node_modules\/vite\/bin\/vite\.js/)
+})
+
 test('the first render does not depend on external stylesheets', async () => {
   const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
 

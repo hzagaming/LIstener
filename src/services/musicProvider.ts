@@ -219,7 +219,8 @@ class ApiProvider implements MusicProvider {
 
 const demoProvider = new DemoProvider()
 const publicAppleProvider = createPublicAppleProvider({ fallback: demoProvider })
-const apiBase = import.meta.env.VITE_MUSIC_API_BASE?.trim() ?? ''
+const configuredApiBase = import.meta.env.VITE_MUSIC_API_BASE?.trim() ?? ''
+const apiBase = configuredApiBase || (import.meta.env.DEV ? window.location.origin : '')
 export const publicAppleMode = import.meta.env.VITE_PUBLIC_APPLE === 'true' || !apiBase
 export const musicProvider: MusicProvider = publicAppleMode
   ? publicAppleProvider

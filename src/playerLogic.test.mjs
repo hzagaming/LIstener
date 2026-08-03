@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   autoplayMediaMatches, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
-  playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
+  mediaErrorAction, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 
@@ -112,4 +112,14 @@ test('restarts the current track before moving to the previous one', () => {
   assert.equal(shouldRestartCurrentTrack(3, 0, 120), false)
   assert.equal(shouldRestartCurrentTrack(30, -1, 120), false)
   assert.equal(shouldRestartCurrentTrack(Number.NaN, 0, 120), false)
+})
+
+test('retries a media network failure only once per playback attempt', () => {
+  const failure = { hasAudioUrl: true, errorCode: 2, mediaKey: 'demo:3', retryKey: null, source: 'demo' }
+
+  assert.equal(mediaErrorAction(failure), 'retry')
+  assert.equal(mediaErrorAction({ ...failure, retryKey: 'demo:3' }), 'report')
+  assert.equal(mediaErrorAction({ ...failure, errorCode: 3 }), 'report')
+  assert.equal(mediaErrorAction({ ...failure, source: 'apple', errorCode: 3 }), 'invalidate')
+  assert.equal(mediaErrorAction({ ...failure, hasAudioUrl: false }), 'ignore')
 })

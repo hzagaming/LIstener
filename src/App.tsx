@@ -9,7 +9,7 @@ import { playlists, tracks as initialTracks } from './data/catalog'
 import { localFileStem, readLocalLyrics, selectLocalAudioFiles } from './localFiles.mjs'
 import {
   autoplayMediaMatches, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
-  playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
+  mediaErrorAction, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 import { searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
@@ -226,6 +226,8 @@ function App() {
   const lyricsControllerRef = useRef<AbortController | null>(null)
   const playRequestRef = useRef(0)
   const autoplayMediaKeyRef = useRef<string | null>(null)
+  const mediaRetryKeyRef = useRef<string | null>(null)
+  const mediaRetryTimerRef = useRef<number>()
   const queueRevisionRef = useRef(0)
   const searchRequestRef = useRef(0)
   const identifyRequestRef = useRef(0)
@@ -251,7 +253,7 @@ function App() {
   const attemptPlayback = (audio: HTMLAudioElement) => {
     if (audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) setIsBuffering(true)
     void audio.play().catch((error: unknown) => {
-      if (audioRef.current !== audio) return
+      if (audioRef.current !== audio || audio.error) return
       setIsPlaying(false)
       setIsBuffering(false)
       if (error instanceof DOMException && error.name === 'AbortError') return
@@ -262,6 +264,12 @@ function App() {
   }
 
   const isCurrentAudio = (audio: HTMLAudioElement) => audioRef.current === audio
+
+  const cancelMediaRetry = () => {
+    if (mediaRetryTimerRef.current) window.clearTimeout(mediaRetryTimerRef.current)
+    mediaRetryTimerRef.current = undefined
+    mediaRetryKeyRef.current = null
+  }
 
   const focusAfterRemoval = (
     button: HTMLButtonElement,
@@ -372,6 +380,7 @@ function App() {
     searchControllerRef.current?.abort()
     identifyControllerRef.current?.abort()
     lyricsControllerRef.current?.abort()
+    if (mediaRetryTimerRef.current) window.clearTimeout(mediaRetryTimerRef.current)
     for (const { url } of localFilesRef.current.values()) URL.revokeObjectURL(url)
   }, [])
 
@@ -528,6 +537,15 @@ function App() {
   }
 
   const playTrack = (track: Track, list?: Track[], mode: PlayMode = 'toggle') => {
+    if (mediaLoadKey(track) !== currentMediaKey) {
+      cancelMediaRetry()
+      const audio = audioRef.current
+      if (audio) {
+        audio.pause()
+        audio.removeAttribute('src')
+        audio.load()
+      }
+    }
     const key = trackKey(track)
     const updateTrack = (item: Track) => trackKey(item) === key ? track : item
     if (list) {
@@ -551,6 +569,7 @@ function App() {
       const audio = audioRef.current
       if (!audio) return
       if (mode === 'toggle' && isBuffering) {
+        cancelMediaRetry()
         audio.pause()
         setIsPlaying(false)
         setIsBuffering(false)
@@ -623,6 +642,7 @@ function App() {
       void resolveAndPlay(current, undefined, 'play')
       return
     }
+    cancelMediaRetry()
     attemptPlayback(audio)
   }
 
@@ -635,6 +655,7 @@ function App() {
     const audio = audioRef.current
     if (!audio) return
     if (isBuffering) {
+      cancelMediaRetry()
       audio.pause()
       setIsPlaying(false)
       setIsBuffering(false)
@@ -968,6 +989,7 @@ function App() {
     queueRevisionRef.current += 1
     setQueue((previous) => previous.filter((item) => trackKey(item) !== key))
     if (key === currentKey) {
+      cancelMediaRetry()
       audioRef.current?.pause()
       setIsPlaying(false)
       setIsBuffering(false)
@@ -976,6 +998,7 @@ function App() {
 
   const clearQueue = () => {
     cancelPendingPlay()
+    cancelMediaRetry()
     queueRevisionRef.current += 1
     audioRef.current?.pause()
     setQueue([])
@@ -993,11 +1016,30 @@ function App() {
     setUserPlaylists((previous) => previous.map((playlist) => ({ ...playlist, tracks: playlist.tracks.map(update) })))
   }
 
-  const handleAudioError = () => {
-    if (!current.audioUrl) return
+  const handleAudioError = (audio: HTMLAudioElement) => {
+    const action = mediaErrorAction({
+      hasAudioUrl: Boolean(current.audioUrl),
+      errorCode: audio.error?.code ?? 0,
+      mediaKey: currentMediaKey,
+      retryKey: mediaRetryKeyRef.current,
+      source: current.source,
+    })
+    if (action === 'ignore') return
     setIsPlaying(false)
+    if (action === 'retry') {
+      mediaRetryKeyRef.current = currentMediaKey
+      setIsBuffering(true)
+      showNotice('网络发生变化，正在重新连接音源')
+      mediaRetryTimerRef.current = window.setTimeout(() => {
+        mediaRetryTimerRef.current = undefined
+        if (audioRef.current !== audio) return
+        audio.load()
+        attemptPlayback(audio)
+      }, 800)
+      return
+    }
     setIsBuffering(false)
-    if (current.source === 'demo' || current.source === 'local') {
+    if (action === 'report') {
       showNotice('音源暂时无法播放，请换一首试试')
       return
     }
@@ -1077,6 +1119,7 @@ function App() {
       }],
       ['pause', () => {
         if (pendingTrackKeyRef.current) cancelPendingPlay()
+        cancelMediaRetry()
         audioRef.current?.pause()
       }],
       ['previoustrack', () => skip(-1)],
@@ -1454,7 +1497,7 @@ function App() {
           preload="none"
           playsInline
           onPlay={(event) => { if (isCurrentAudio(event.currentTarget)) setIsPlaying(true) }}
-          onPlaying={(event) => { if (isCurrentAudio(event.currentTarget)) setIsBuffering(false) }}
+          onPlaying={(event) => { if (isCurrentAudio(event.currentTarget)) { cancelMediaRetry(); setIsBuffering(false) } }}
           onWaiting={(event) => { if (isCurrentAudio(event.currentTarget) && !event.currentTarget.paused) setIsBuffering(true) }}
           onStalled={(event) => { if (isCurrentAudio(event.currentTarget) && !event.currentTarget.paused) setIsBuffering(true) }}
           onPause={(event) => { if (isCurrentAudio(event.currentTarget)) { setIsPlaying(false); setIsBuffering(false) } }}
@@ -1468,7 +1511,7 @@ function App() {
             }
           }}
           onEnded={(event) => { if (isCurrentAudio(event.currentTarget)) handleEnded() }}
-          onError={(event) => { if (isCurrentAudio(event.currentTarget)) handleAudioError() }}
+          onError={(event) => { if (isCurrentAudio(event.currentTarget)) handleAudioError(event.currentTarget) }}
         />
         <div className="player__track"><Cover name={current.cover} size="small" /><div><strong>{current.title}</strong><span><b className="player__state" aria-live="polite">{playerStateLabel}{playerStateLabel ? ' · ' : ''}</b>{current.artist} · {sourceLabel(current.source)} · {qualityLabels[current.quality]}{current.capabilities.playback === 'preview' ? ' · 试听' : current.capabilities.playback === 'none' ? ' · 不可播放' : ''}</span></div><button aria-label={`${liked.has(currentKey) ? '取消收藏' : '收藏'} ${current.title}`} className={`like-button ${liked.has(currentKey) ? 'liked' : ''}`} onClick={() => toggleLike(current)}><Heart fill={liked.has(currentKey) ? 'currentColor' : 'none'} /></button></div>
         <div className="player__center">

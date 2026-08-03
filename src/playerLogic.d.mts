@@ -35,3 +35,10 @@ export declare const shouldCancelPendingTrack: (requestedKey: string, pendingKey
 export declare const shouldRestartCurrentTrack: (progress: number, currentIndex: number) => boolean
 export declare const seekPosition: (value: number, duration: number) => number | null
 export declare const initialPlaybackDuration: (track: DurationTrackLike) => number
+export declare const mediaErrorAction: (state: {
+  hasAudioUrl: boolean
+  errorCode: number
+  mediaKey: string
+  retryKey: string | null
+  source: string
+}) => 'ignore' | 'retry' | 'report' | 'invalidate'

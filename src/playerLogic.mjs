@@ -59,3 +59,9 @@ export const seekPosition = (value, duration) => (
 export const initialPlaybackDuration = (track) => (
   track.capabilities.playback === 'full' && track.audioUrl ? track.duration : 0
 )
+
+export const mediaErrorAction = ({ hasAudioUrl, errorCode, mediaKey, retryKey, source }) => {
+  if (!hasAudioUrl) return 'ignore'
+  if (errorCode === 2 && retryKey !== mediaKey) return 'retry'
+  return source === 'demo' || source === 'local' ? 'report' : 'invalidate'
+}

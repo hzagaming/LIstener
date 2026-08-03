@@ -149,8 +149,25 @@ test('an invalidated audio source clears stale progress metadata', async () => {
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
   const handler = app.slice(app.indexOf('const handleAudioError'), app.indexOf('const seekTo'))
 
+  assert.match(app, /const mediaRetryKeyRef = useRef<string \| null>\(null\)/)
+  assert.match(handler, /mediaErrorAction\(/)
+  assert.match(handler, /audio\.load\(\)[\s\S]*?attemptPlayback\(audio\)/)
   assert.match(handler, /setProgress\(0\)/)
   assert.match(handler, /setDuration\(initialPlaybackDuration\(invalidated\)\)/)
+})
+
+test('switching tracks cancels retry timers and the previous media request', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const playTrack = app.slice(app.indexOf('const playTrack'), app.indexOf('const resolveAndPlay'))
+
+  assert.match(playTrack, /if \(mediaLoadKey\(track\) !== currentMediaKey\)\s*{[\s\S]*?cancelMediaRetry\(\)[\s\S]*?audio\.removeAttribute\('src'\)[\s\S]*?audio\.load\(\)/)
+})
+
+test('media errors own playback failure feedback without a competing promise notice', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const attemptPlayback = app.slice(app.indexOf('const attemptPlayback'), app.indexOf('const isCurrentAudio'))
+
+  assert.match(attemptPlayback, /if \(audioRef\.current !== audio \|\| audio\.error\) return/)
 })
 
 test('an unplayable track clears stale system media progress', async () => {

@@ -104,6 +104,10 @@ test('the UI exposes one music output and hides internal fixture identifiers', a
   assert.doesNotMatch(app, /new Audio\s*\(/)
   assert.doesNotMatch(app, /AudioContext\s*\(/)
   assert.match(app, /\['demo', 'local', 'fixture'\]\.includes\(source\)/)
+  assert.match(app, /useState<PlaybackFilter>\(publicAppleMode \? 'all' : 'no-preview'\)/)
+  assert.match(app, /完整与元数据/)
+  assert.match(app, /仅完整可播/)
+  assert.match(app, /包含试听/)
 })
 
 test('mobile and queue dialogs keep valid semantics and move focus inside', async () => {

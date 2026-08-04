@@ -132,7 +132,7 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .track-card--current .track-card__meta h3 { color: #b94724; }
 .track-card__meta p { font-size: 12px; color: var(--muted); margin: 0 0 7px; }
 .source { display: inline-flex; font-size: 10px; line-height: 1; border: 1px solid; border-radius: 2px; padding: 3px 5px; color: #806c5e; }
-.source--qq { color: #68744f; }.source--kugou { color: #526f84; }.source--apple { color: #9b3f52; }.source--musicbrainz { color: #8a4f76; }.source--audius { color: #6b4db5; }.source--wikimedia { color: #735b3e; }.source--demo { color: #805f82; }
+.source--netease { color: #9b2d30; }.source--qq { color: #68744f; }.source--kugou { color: #526f84; }.source--apple { color: #9b3f52; }.source--musicbrainz { color: #8a4f76; }.source--audius { color: #6b4db5; }.source--wikimedia { color: #735b3e; }.source--demo { color: #805f82; }
 .track-card > .like-button { position: absolute; right: 0; bottom: 20px; min-width: 40px; min-height: 40px; display: grid; place-items: center; }
 .like-button { border: 0; background: none; color: #77736b; padding: 5px; cursor: pointer; }
 .like-button svg { width: 15px; height: 15px; }
@@ -200,6 +200,11 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .source-filters button { border: 1px solid #bdb8ad; background: transparent; border-radius: 20px; color: #6f6b63; padding: 7px 13px; font-size: 11px; cursor: pointer; transition: .18s ease; }
 .source-filters button:hover { border-color: #88837a; color: var(--ink); }
 .source-filters button.active { background: var(--ink); border-color: var(--ink); color: #f7f3e9; }
+.playback-filters { display: flex; align-items: center; gap: 7px; margin-top: 10px; flex-wrap: wrap; }
+.playback-filters > span { margin-right: 3px; color: var(--muted); font-size: 10px; }
+.playback-filters button { border: 0; border-bottom: 1px solid transparent; background: transparent; color: #6f6b63; padding: 6px 4px; font-size: 11px; cursor: pointer; }
+.playback-filters button:hover { color: var(--ink); }
+.playback-filters button.active { border-bottom-color: var(--orange); color: var(--ink); font-weight: 700; }
 .results-section { padding-top: 10px; }
 .searching-state { font-size: 12px; color: #66635d; }
 .search-warning { display: flex; align-items: center; gap: 11px; margin-bottom: 20px; border: 1px solid #c99a61; background: #f1e4d0; color: #664825; padding: 12px 14px; }
@@ -416,7 +421,7 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .cover-play, .playlist-card__play { opacity: 1; transform: none; }
   .track-row__play span { display: none; }
   .track-row__play svg { display: inline; }
-  .search-hints button, .source-filters button { min-height: 36px; }
+  .search-hints button, .source-filters button, .playback-filters button { min-height: 36px; }
   .search-hints button { padding-inline: 4px; }
 }
 

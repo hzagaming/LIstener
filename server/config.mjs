@@ -8,9 +8,9 @@ const integer = (env, name, fallback, minimum, maximum) => {
   return value
 }
 
-const boolean = (env, name) => {
+const boolean = (env, name, fallback = false) => {
   const raw = env[name]?.trim().toLocaleLowerCase()
-  if (!raw) return false
+  if (!raw) return fallback
   if (raw !== 'true' && raw !== 'false') throw new Error(`invalid ${name}`)
   return raw === 'true'
 }
@@ -47,12 +47,12 @@ export const readMusicConfig = (env = process.env) => ({
   corsOrigin: corsOrigin(env.CORS_ORIGIN?.trim() || 'http://localhost:5173'),
   enabledProviders: providerList(env.MUSIC_ENABLED_PROVIDERS),
   enableFixture: boolean(env, 'ENABLE_LOCAL_FIXTURE'),
-  enableNetease: boolean(env, 'ENABLE_NETEASE'),
+  enableNetease: boolean(env, 'ENABLE_NETEASE', true),
   musicBrainzContact: text(env, 'MUSICBRAINZ_CONTACT', 'https://github.com/hzagaming/LIstener'),
   providerTimeoutMs: integer(env, 'MUSIC_PROVIDER_TIMEOUT_MS', 8_000, 100, 30_000),
   responseLimitBytes: integer(env, 'MUSIC_PROVIDER_RESPONSE_LIMIT_BYTES', 2_097_152, 1_024, 10_485_760),
   maxRetries: integer(env, 'MUSIC_MAX_RETRIES', 1, 0, 1),
-  maxConcurrentProviders: integer(env, 'MUSIC_MAX_CONCURRENT_PROVIDERS', 3, 1, 10),
+  maxConcurrentProviders: integer(env, 'MUSIC_MAX_CONCURRENT_PROVIDERS', 4, 1, 10),
   searchCacheTtlMs: integer(env, 'MUSIC_CACHE_TTL_MS', 30_000, 0, 3_600_000),
   operationCacheTtlMs: integer(env, 'MUSIC_OPERATION_CACHE_TTL_MS', 60_000, 0, 3_600_000),
   negativeCacheTtlMs: integer(env, 'MUSIC_NEGATIVE_CACHE_TTL_MS', 5_000, 0, 60_000),

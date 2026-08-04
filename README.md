@@ -2,13 +2,13 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、本地音乐、播放队列和按来源授权的歌词与下载能力。
 
-当前版本：`0.4.21`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.4.22`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
 需要 Node.js 18.17 或更高版本。
 
-默认一条命令同时启动 Node 聚合 API 与 Vite 前端，并接入 Apple、MusicBrainz 和 Wikimedia Commons 三个官方公开数据源：
+默认一条命令同时启动 Node 聚合 API 与 Vite 前端，并接入 Apple、MusicBrainz、Wikimedia Commons，以及实验性的网易云公开元数据搜索：
 
 ```bash
 npm install
@@ -35,7 +35,9 @@ npm run build
 
 ## 接入音乐源
 
-页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和可用试听，通过 `server/providers/musicbrainz.mjs` 补充 CC0 录音元数据，并通过 `server/providers/wikimedia.mjs` 搜索 Wikimedia Commons 的开放音频文件；没有试听的合法元数据会保留并标记为不可播放。Audius 可提供创作者公开音频，网易云仅作为区域相关的实验元数据来源。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
+页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和授权试听，通过 `server/providers/musicbrainz.mjs` 补充 CC0 录音元数据，通过 `server/providers/wikimedia.mjs` 搜索 Wikimedia Commons 开放音频，并通过 `server/providers/netease.mjs` 补充网易云公开目录元数据和 ID 详情；没有合法播放地址的元数据会保留并明确标记为不可播放。Audius 配置 Key 后可提供创作者公开音频。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
+
+Node 聚合模式默认使用“完整与元数据”播放范围：隐藏 Apple 试听结果，保留 Wikimedia/Audius 完整音频和网易云/MusicBrainz 目录元数据；可切换为“仅完整可播”或“包含试听”。GitHub Pages 只有浏览器可直连的 Apple 公共接口，因此默认保留试听结果。
 
 地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、Apple Music、MusicBrainz、Audius API 和 Wikimedia Commons 文件页地址/ID。解析只识别格式，不代表对应平台已经获得搜索、播放或下载授权；健康接口会返回当前实际连接的来源和能力。
 
@@ -63,7 +65,7 @@ npm run build
 
 Node 接口不可用时会先回退到 Apple 公共搜索，公共接口也持续不可用时才使用演示数据；页面会区分公共/演示结果并提供显式重试，不会将故障伪装成零结果。
 
-服务端默认限制每个客户端每分钟 60 次请求，最多同时调用 3 个 Provider，搜索结果缓存 30 秒，并对同来源重复记录去重。`.env.example` 列出了 Provider 白名单、Fixture/网易开关、超时、响应上限、一次重试、并发数、缓存 TTL 和 API 限流配置。服务端变量需由 shell 或部署平台注入，不会由 Node 自动读取 `.env.example`。
+服务端默认限制每个客户端每分钟 60 次请求，最多同时调用 4 个 Provider，搜索结果缓存 30 秒，并对同来源重复记录去重。`.env.example` 列出了 Provider 白名单、Fixture/网易开关、超时、响应上限、一次重试、并发数、缓存 TTL 和 API 限流配置。服务端变量需由 shell 或部署平台注入，不会由 Node 自动读取 `.env.example`。
 
 没有外部网络时，可显式启用只含原创测试元数据和歌词、且没有播放地址的 Fixture Provider：
 
@@ -85,10 +87,10 @@ Audius 只开放官方 API 明确标记为可串流且未设置访问门槛的�
 AUDIUS_API_KEY=你的开发者Key npm run server
 ```
 
-网易云搜索接口未获官方稳定性确认，并且在部分区域会返回加密结果，因此默认关闭。即使显式启用也只提供实验性元数据搜索，不解析或构造播放地址：
+网易云公开 Web 端点未提供稳定性承诺，并且在部分区域可能返回加密结果，因此只作为默认启用的实验性元数据源。它支持关键词搜索与数字 ID 详情，但不伪造签名、不解密、不构造播放地址；可显式关闭：
 
 ```bash
-ENABLE_NETEASE=true npm run server
+ENABLE_NETEASE=false npm run server
 ```
 
 ## 播放、歌词与下载规则

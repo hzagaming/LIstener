@@ -12,7 +12,7 @@ import {
   mediaErrorAction, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
-import { searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
+import { filterTracksByPlayback, searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
 import { musicProvider, publicAppleMode, sourceLabel } from './services/musicProvider'
 import { isPlaylist, isTrack, musicSources, trackKey } from './types/music'
 import { isSafeUrl } from './urlPolicy.mjs'
@@ -20,6 +20,7 @@ import type { MusicIdentification, MusicSource, Playlist, ProviderStatus, Track 
 
 type View = 'discover' | 'search' | 'library'
 type PlayMode = 'toggle' | 'play'
+type PlaybackFilter = 'no-preview' | 'full' | 'all'
 const identifiableSources: MusicSource[] = publicAppleMode ? ['apple'] : musicSources.filter((source) => !['demo', 'local', 'fixture'].includes(source))
 
 const readStoredTracks = (key: string, fallback: Track[], allowEmpty = false) => {
@@ -176,6 +177,7 @@ function App() {
   const [searchDegraded, setSearchDegraded] = useState(false)
   const [searchRevision, setSearchRevision] = useState(0)
   const [sourceFilter, setSourceFilter] = useState<'all' | MusicSource>('all')
+  const [playbackFilter, setPlaybackFilter] = useState<PlaybackFilter>(publicAppleMode ? 'all' : 'no-preview')
   const [queue, setQueue] = useState<Track[]>(() => playableTracks(readStoredTracks('listener.queue', initialTracks.slice(0, 6), true)))
   const [current, setCurrent] = useState<Track>(() => readStoredTrack('listener.current', initialTracks[0]))
   const [isPlaying, setIsPlaying] = useState(false)
@@ -508,10 +510,15 @@ function App() {
 
   const currentKey = trackKey(current)
   const currentIndex = useMemo(() => queue.findIndex((track) => trackKey(track) === currentKey), [queue, currentKey])
-  const displayResults = useMemo(
+  const sourceResults = useMemo(
     () => sourceFilter === 'all' ? results : results.filter((track) => track.source === sourceFilter),
     [results, sourceFilter],
   )
+  const displayResults = useMemo(
+    () => filterTracksByPlayback(sourceResults, playbackFilter),
+    [sourceResults, playbackFilter],
+  )
+  const hiddenByPlayback = sourceResults.length - displayResults.length
   const resultSources = useMemo(() => [...new Set(results.map((track) => track.source))], [results])
   const publicSearchFallback = searchDegraded && resultSources.includes('apple')
   const likedTracks = useMemo(() => [...liked.values()], [liked])
@@ -1304,10 +1311,16 @@ function App() {
                   <button key={source} aria-pressed={sourceFilter === source} className={sourceFilter === source ? 'active' : ''} onClick={() => setSourceFilter(source)}>{sourceLabel(source)}</button>
                 ))}
               </div>
+              <div className="playback-filters" role="group" aria-label="播放范围筛选">
+                <span>播放范围</span>
+                <button aria-pressed={playbackFilter === 'no-preview'} className={playbackFilter === 'no-preview' ? 'active' : ''} onClick={() => setPlaybackFilter('no-preview')}>完整与元数据</button>
+                <button aria-pressed={playbackFilter === 'full'} className={playbackFilter === 'full' ? 'active' : ''} onClick={() => setPlaybackFilter('full')}>仅完整可播</button>
+                <button aria-pressed={playbackFilter === 'all'} className={playbackFilter === 'all' ? 'active' : ''} onClick={() => setPlaybackFilter('all')}>包含试听</button>
+              </div>
             </div>
             <section className="results-section">
               {searchDegraded && <div className="search-warning" role="alert"><Sparkles /><span><strong>{publicSearchFallback ? '聚合服务离线，已切换公共搜索' : '聚合服务异常，当前为演示结果'}</strong><small>{publicSearchFallback ? '当前由 Apple Music 公共接口提供结果。' : '真实音乐源暂时不可用，请稍后重试。'}</small></span><button onClick={() => setSearchRevision((value) => value + 1)}>重试</button></div>}
-              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索结果 ${displayResults.length} 首` : searchDegraded ? `演示结果 ${displayResults.length} 首` : `共 ${displayResults.length} 首`}</span></div>
+              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索结果 ${displayResults.length} 首` : searchDegraded ? `演示结果 ${displayResults.length} 首` : `共 ${displayResults.length} 首${hiddenByPlayback ? ` · 已过滤 ${hiddenByPlayback} 首` : ''}`}</span></div>
               <div className="track-list" role="list">
                 {displayResults.length ? displayResults.map((track, index) => (
                   <TrackRow
@@ -1325,7 +1338,7 @@ function App() {
                     onLyrics={() => void openLyrics(track)}
                     onDownload={() => void downloadTrack(track)}
                   />
-                )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : inputMode === 'too-long' ? '搜索词太长' : searchDegraded ? '聚合服务暂不可用' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : inputMode === 'too-long' ? '请缩短到 100 个字符以内，再重新搜索。' : searchDegraded ? '备用音乐源也没有匹配结果，请点击重试。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
+                )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : inputMode === 'too-long' ? '搜索词太长' : sourceResults.length ? '当前播放范围没有结果' : searchDegraded ? '聚合服务暂不可用' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : inputMode === 'too-long' ? '请缩短到 100 个字符以内，再重新搜索。' : sourceResults.length ? '可切换到“完整与元数据”或“包含试听”查看其他曲目。' : searchDegraded ? '备用音乐源也没有匹配结果，请点击重试。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
               </div>
             </section>
           </div>

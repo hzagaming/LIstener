@@ -9,12 +9,12 @@ test('loads bounded music defaults without secrets', () => {
     corsOrigin: 'http://localhost:5173',
     enabledProviders: [],
     enableFixture: false,
-    enableNetease: false,
+    enableNetease: true,
     musicBrainzContact: 'https://github.com/hzagaming/LIstener',
     providerTimeoutMs: 8_000,
     responseLimitBytes: 2_097_152,
     maxRetries: 1,
-    maxConcurrentProviders: 3,
+    maxConcurrentProviders: 4,
     searchCacheTtlMs: 30_000,
     operationCacheTtlMs: 60_000,
     negativeCacheTtlMs: 5_000,
@@ -48,6 +48,10 @@ test('normalizes provider lists and explicit environment overrides', () => {
   assert.equal(config.musicBrainzContact, 'ops@example.com')
   assert.equal(config.maxRetries, 0)
   assert.equal(config.maxConcurrentProviders, 2)
+})
+
+test('allows the default NetEase provider to be explicitly disabled', () => {
+  assert.equal(readMusicConfig({ ENABLE_NETEASE: 'false' }).enableNetease, false)
 })
 
 test('rejects unsafe configuration', () => {

@@ -15,3 +15,11 @@ export const createSearchFallbackError = (tracks) => Object.assign(
 export const searchFallbackTracks = (error) => (
   error?.code === SEARCH_FALLBACK && Array.isArray(error.tracks) ? error.tracks : null
 )
+
+export const filterTracksByPlayback = (tracks, mode) => {
+  if (!Array.isArray(tracks)) return []
+  if (mode === 'all') return tracks
+  return tracks.filter((track) => mode === 'full'
+    ? track?.capabilities?.playback === 'full'
+    : track?.capabilities?.playback !== 'preview')
+}

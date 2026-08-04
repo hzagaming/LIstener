@@ -3,7 +3,7 @@ import { isSafeArtwork, isSafeUrl } from '../urlPolicy.mjs'
 export const musicSources = [
   'netease', 'qq', 'kugou', 'kuwo', 'qianqian', '1ting', 'migu', 'lizhi',
   'qingting', 'ximalaya', '5sing-original', '5sing-cover', 'qmkg', 'apple',
-  'musicbrainz', 'audius', 'local', 'demo',
+  'musicbrainz', 'audius', 'wikimedia', 'local', 'demo',
   'fixture',
 ] as const
 export type MusicSource = typeof musicSources[number]

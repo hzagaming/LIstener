@@ -143,6 +143,13 @@ const definitions = [
     match: (url) => matchPath(url, /^\/v1\/tracks\/([A-Za-z0-9_-]+)\/?$/i),
     canonical: (id) => `https://api.audius.co/v1/tracks/${id}`,
   },
+  {
+    source: 'wikimedia',
+    hosts: ['commons.wikimedia.org'],
+    validate: (id) => numeric.test(id),
+    match: (url) => url.searchParams.get('curid') ?? undefined,
+    canonical: (id) => `https://commons.wikimedia.org/?curid=${id}`,
+  },
 ]
 
 export const platformSources = definitions.map(({ source }) => source)

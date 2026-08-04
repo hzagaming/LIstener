@@ -69,7 +69,7 @@ export const createMusicBrainzProvider = ({
     timeoutMs,
     maxResponseBytes: responseLimitBytes,
     maxRetries,
-    userAgent: `Listener/0.4.20 (${normalizedContact})`,
+    userAgent: `Listener/0.4.21 (${normalizedContact})`,
   })
 
   const request = (url, signal, notFound = false) => {
@@ -102,8 +102,9 @@ export const createMusicBrainzProvider = ({
       if (!value) return []
       const url = new URL(endpoint)
       url.searchParams.set('query', value)
-      url.searchParams.set('limit', String(Math.min(50, Math.max(1, limit))))
-      url.searchParams.set('offset', String(Math.max(0, page - 1) * limit))
+      const boundedLimit = Math.min(50, Math.max(1, limit))
+      url.searchParams.set('limit', String(boundedLimit))
+      url.searchParams.set('offset', String(Math.max(0, page - 1) * boundedLimit))
       url.searchParams.set('fmt', 'json')
       const payload = await request(url, signal)
       if (!Array.isArray(payload?.recordings)) throw new Error('invalid MusicBrainz response')

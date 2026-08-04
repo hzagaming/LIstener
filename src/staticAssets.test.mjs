@@ -97,6 +97,15 @@ test('the initial player does not initiate third-party audio loading', async () 
   assert.match(currentTrackEffect, /if \(!autoplayMediaMatches\(autoplayMediaKeyRef\.current, currentMediaKey\)\) return[\s\S]*?audio\.load\(\)/)
 })
 
+test('the UI exposes one music output and hides internal fixture identifiers', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+
+  assert.equal((app.match(/<audio\b/g) ?? []).length, 1)
+  assert.doesNotMatch(app, /new Audio\s*\(/)
+  assert.doesNotMatch(app, /AudioContext\s*\(/)
+  assert.match(app, /\['demo', 'local', 'fixture'\]\.includes\(source\)/)
+})
+
 test('mobile and queue dialogs keep valid semantics and move focus inside', async () => {
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
 

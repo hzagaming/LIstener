@@ -2,13 +2,13 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、本地音乐、播放队列和按来源授权的歌词与下载能力。
 
-当前版本：`0.4.20`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.4.21`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
 需要 Node.js 18.17 或更高版本。
 
-默认一条命令同时启动 Node 聚合 API 与 Vite 前端，并接入 Apple 和 MusicBrainz 两个官方公开数据源：
+默认一条命令同时启动 Node 聚合 API 与 Vite 前端，并接入 Apple、MusicBrainz 和 Wikimedia Commons 三个官方公开数据源：
 
 ```bash
 npm install
@@ -35,16 +35,16 @@ npm run build
 
 ## 接入音乐源
 
-页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和可用试听，并通过 `server/providers/musicbrainz.mjs` 补充 CC0 录音元数据；没有试听的合法元数据会保留并标记为不可播放。Audius 可提供创作者公开音频，网易云仅作为区域相关的实验元数据来源。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
+页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和可用试听，通过 `server/providers/musicbrainz.mjs` 补充 CC0 录音元数据，并通过 `server/providers/wikimedia.mjs` 搜索 Wikimedia Commons 的开放音频文件；没有试听的合法元数据会保留并标记为不可播放。Audius 可提供创作者公开音频，网易云仅作为区域相关的实验元数据来源。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
 
-地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、Apple Music、MusicBrainz 和 Audius API 地址/ID。解析只识别格式，不代表对应平台已经获得搜索、播放或下载授权；健康接口会返回当前实际连接的来源和能力。
+地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、Apple Music、MusicBrainz、Audius API 和 Wikimedia Commons 文件页地址/ID。解析只识别格式，不代表对应平台已经获得搜索、播放或下载授权；健康接口会返回当前实际连接的来源和能力。
 
 开发模式未配置 `VITE_MUSIC_API_BASE` 时通过 Vite 的同源 `/api` 代理连接本地聚合服务；生产构建未配置时直接使用 Apple 公共搜索，不会探测不存在的 `/api`。跨域部署 Node API 时，将 `VITE_MUSIC_API_BASE` 设置为实际 API Origin。
 
 接口：
 
 - `GET /api/search?q=关键词` → `{ "tracks": Track[] }`
-- `GET /api/health` → `{ "status": "ok", "sources": ["apple", "musicbrainz"], "capabilities": { ... } }`
+- `GET /api/health` → `{ "status": "ok", "sources": ["apple", "musicbrainz", "wikimedia"], "capabilities": { ... } }`
 - `GET /api/resolve?source=apple&id=歌曲ID` → `{ "url": "可播放地址" }`
 - `GET /api/identify?input=音乐地址` → `{ "match": { "source": "netease", "id": "歌曲ID", "canonicalUrl": "..." } }`
 - `GET /api/track?source=apple&id=歌曲ID` → `{ "track": Track }`
@@ -76,6 +76,8 @@ MusicBrainz 要求客户端提供可联系的应用标识，并限制为每秒�
 ```bash
 MUSICBRAINZ_CONTACT=ops@example.com npm run server
 ```
+
+Wikimedia Commons 来源使用官方 Action API 搜索文件命名空间中的音频，并直接播放 `upload.wikimedia.org` 公开文件；每个文件的作者、许可和署名要求以结果对应的 Commons 来源页为准。本项目不代理或缓存音频，也不提供该来源的下载接口。
 
 Audius 只开放官方 API 明确标记为可串流且未设置访问门槛的歌曲。API Key 始终保留在服务端，解析接口只向浏览器返回 Audius 生成的公开 HTTPS 流地址；不处理用户登录、签名、付费/关注/NFT 门槛或下载。请先阅读并接受 [Audius API Terms](https://audius.co/legal/api-terms)，再配置开发者 Key：
 
@@ -110,5 +112,6 @@ npm test
 
 - [Mopidy Backend API](https://docs.mopidy.com/latest/api/backend/)（Apache-2.0）：参考搜索与播放能力分离的 Provider 边界。
 - [MusicBrainz Web Service](https://musicbrainz.org/doc/MusicBrainz_API) 与 [数据许可](https://musicbrainz.org/doc/MusicBrainz_License)：遵循 User-Agent、每秒一次请求和核心数据 CC0 规则。
+- [MediaWiki Action API](https://www.mediawiki.org/wiki/API:Main_page) 与 [Wikimedia Commons 许可说明](https://commons.wikimedia.org/wiki/Commons:Licensing)：只检索公开音频，具体内容许可与署名要求以文件来源页为准。
 - [musicbrainz-api](https://github.com/Borewit/musicbrainz-api)（MIT）：参考应用标识、MBID lookup 与限流思路；本项目未复制其实现或引入该依赖。
 - [Audius API / SDK](https://github.com/audiusproject/apps/tree/main/packages/docs/docs/pages/sdk)（Apache-2.0）：参考官方搜索、Track 权限字段、流地址解析与 10 请求/秒限制；软件许可不代表音乐内容可下载或再分发。

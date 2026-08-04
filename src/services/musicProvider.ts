@@ -26,6 +26,7 @@ const labels: Record<MusicSource, string> = {
   apple: 'Apple Music',
   musicbrainz: 'MusicBrainz',
   audius: 'Audius',
+  wikimedia: 'Wikimedia Commons',
   local: '本地音乐',
   demo: '演示源',
   fixture: '离线测试源',

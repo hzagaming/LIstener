@@ -4,6 +4,7 @@ import { createMusicService } from './musicService.mjs'
 import { createAppleProvider } from './providers/apple.mjs'
 import { createAudiusProvider } from './providers/audius.mjs'
 import { createMusicBrainzProvider } from './providers/musicbrainz.mjs'
+import { createWikimediaProvider } from './providers/wikimedia.mjs'
 import { createNeteaseProvider } from './providers/netease.mjs'
 import { createLocalFixtureProvider } from './providers/localFixture.mjs'
 import { readMusicConfig } from './config.mjs'
@@ -29,6 +30,9 @@ if (selected('musicbrainz')) {
     contact: config.musicBrainzContact,
     ...providerHttp,
   }))
+}
+if (selected('wikimedia')) {
+  providers.push(createWikimediaProvider(providerHttp))
 }
 if (selected('audius') && process.env.AUDIUS_API_KEY?.trim()) {
   providers.push(createAudiusProvider({

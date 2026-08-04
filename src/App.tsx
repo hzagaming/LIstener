@@ -20,7 +20,7 @@ import type { MusicIdentification, MusicSource, Playlist, ProviderStatus, Track 
 
 type View = 'discover' | 'search' | 'library'
 type PlayMode = 'toggle' | 'play'
-const identifiableSources: MusicSource[] = publicAppleMode ? ['apple'] : musicSources.filter((source) => source !== 'demo' && source !== 'local')
+const identifiableSources: MusicSource[] = publicAppleMode ? ['apple'] : musicSources.filter((source) => !['demo', 'local', 'fixture'].includes(source))
 
 const readStoredTracks = (key: string, fallback: Track[], allowEmpty = false) => {
   try {

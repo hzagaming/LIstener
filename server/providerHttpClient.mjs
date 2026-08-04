@@ -98,7 +98,7 @@ export const createProviderHttpClient = ({
   maxRetries = 1,
   retryDelayMs = 80,
   waitImpl = wait,
-  userAgent = 'Listener/0.4.12 (+music metadata search)',
+  userAgent = 'Listener/0.4.21 (+https://github.com/hzagaming/LIstener)',
 } = {}) => {
   const hosts = new Set((allowedHosts ?? []).map(normalizeHost).filter(Boolean))
   if (!hosts.size) throw new Error('at least one public provider host is required')

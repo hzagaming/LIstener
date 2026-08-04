@@ -281,7 +281,11 @@ export const createMusicService = ({
         tracks: tracks.slice(0, pageSize),
         providerErrors,
         cached: false,
-        hasMore: tracks.length > pageSize || providerTracks.some((items) => items.length >= pageSize),
+        hasMore: tracks.length > pageSize || providerTracks.some((items, index) => {
+          const cap = selectedProviders[index].maxSearchResults
+          const expected = Number.isInteger(cap) && cap > 0 ? Math.min(pageSize, cap) : pageSize
+          return items.length >= expected
+        }),
       }
       if (!providerErrors.length) {
         setBounded(cache, key, { value, expiresAt: now() + ttlMs })

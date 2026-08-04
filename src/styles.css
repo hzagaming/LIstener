@@ -52,7 +52,7 @@ button[aria-busy='true']:disabled { opacity: 1; }
 .source-card { position: relative; margin-top: auto; background: #30302b; padding: 15px; border-radius: 5px; overflow: hidden; }
 .source-card > span { color: #d0cec5; font-size: 11px; display: flex; gap: 7px; align-items: center; }
 .source-card > span svg { width: 13px; color: #e5a46a; }
-.source-card p { margin: 5px 0 0; font-size: 10px; color: #aaa89f; }
+.source-card p { margin: 5px 0 0; padding-right: 14px; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; color: #aaa89f; }
 .source-card__dots { position: absolute; right: 11px; bottom: 12px; display: flex; gap: 3px; }
 .source-card__dots i { width: 5px; height: 5px; border-radius: 50%; background: #67a980; }
 .source-card__dots.offline i { background: #77766f; }
@@ -132,7 +132,7 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .track-card--current .track-card__meta h3 { color: #b94724; }
 .track-card__meta p { font-size: 12px; color: var(--muted); margin: 0 0 7px; }
 .source { display: inline-flex; font-size: 10px; line-height: 1; border: 1px solid; border-radius: 2px; padding: 3px 5px; color: #806c5e; }
-.source--qq { color: #68744f; }.source--kugou { color: #526f84; }.source--apple { color: #9b3f52; }.source--musicbrainz { color: #8a4f76; }.source--audius { color: #6b4db5; }.source--demo { color: #805f82; }
+.source--qq { color: #68744f; }.source--kugou { color: #526f84; }.source--apple { color: #9b3f52; }.source--musicbrainz { color: #8a4f76; }.source--audius { color: #6b4db5; }.source--wikimedia { color: #735b3e; }.source--demo { color: #805f82; }
 .track-card > .like-button { position: absolute; right: 0; bottom: 20px; min-width: 40px; min-height: 40px; display: grid; place-items: center; }
 .like-button { border: 0; background: none; color: #77736b; padding: 5px; cursor: pointer; }
 .like-button svg { width: 15px; height: 15px; }

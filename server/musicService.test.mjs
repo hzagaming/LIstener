@@ -535,6 +535,22 @@ test('searches one provider with pagination and reports cache metadata', async (
   assert.deepEqual(calls, [['apple', '海', 3, 2]])
 })
 
+test('reports more pages when a provider reaches its declared search cap', async () => {
+  const provider = {
+    id: 'bounded',
+    maxSearchResults: 10,
+    search: async () => Array.from({ length: 10 }, (_, index) => ({
+      ...track(String(index)),
+      source: 'bounded',
+    })),
+  }
+  const service = createMusicService({ providers: [provider] })
+
+  const result = await service.searchDetailed({ query: 'song', pageSize: 20 })
+  assert.equal(result.tracks.length, 10)
+  assert.equal(result.hasMore, true)
+})
+
 test('reports provider failures without caching a partial detailed search', async () => {
   let failingCalls = 0
   const service = createMusicService({ providers: [

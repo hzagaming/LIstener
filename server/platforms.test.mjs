@@ -20,6 +20,8 @@ const cases = [
   ['https://music.apple.com/cn/album/example/123?i=456', 'apple', '456'],
   ['https://musicbrainz.org/recording/026FA041-3917-4C73-9079-ED16E36F20F8', 'musicbrainz', '026fa041-3917-4c73-9079-ed16e36f20f8'],
   ['https://api.audius.co/v1/tracks/D7KyD', 'audius', 'D7KyD'],
+  ['https://commons.wikimedia.org/wiki/File:Example.ogg?curid=57480', 'wikimedia', '57480'],
+  ['https://commons.wikimedia.org/?curid=57480', 'wikimedia', '57480'],
 ]
 
 const rawIds = {
@@ -39,6 +41,7 @@ const rawIds = {
   apple: '456',
   musicbrainz: '026fa041-3917-4c73-9079-ed16e36f20f8',
   audius: 'D7KyD',
+  wikimedia: '57480',
 }
 
 test('identifies supported platform URLs without fetching them', () => {
@@ -96,6 +99,6 @@ test('publishes every supported platform identifier exactly once', () => {
   assert.deepEqual(platformSources, [
     'netease', 'qq', 'kugou', 'kuwo', 'qianqian', '1ting', 'migu', 'lizhi',
     'qingting', 'ximalaya', '5sing-original', '5sing-cover', 'qmkg', 'apple',
-    'musicbrainz', 'audius',
+    'musicbrainz', 'audius', 'wikimedia',
   ])
 })

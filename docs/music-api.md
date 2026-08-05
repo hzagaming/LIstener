@@ -78,10 +78,31 @@
 
 `POST /api/music/tracks/{provider}/{trackId}/playback`
 
-只有 Provider 明确允许播放时才返回 `{ "playback": { "url": "https://..." } }`。使用 POST 避免临时 URL 被普通搜索缓存。服务端不代理、不持久化音频，也不绕过登录、付费、DRM、地域或访问门槛。
+只有 Provider 明确允许播放时才返回 `{ "playback": { "url": "https://..." } }`。使用 POST 避免临时 URL 被普通搜索缓存。播放链路不代理或持久化音频，也不绕过登录、付费、DRM、地域或访问门槛。
+
+## 授权下载与封面
+
+- `GET /api/download?source={provider}&id={trackId}` 返回 Provider 授权的 `{ "url", "filename" }` 描述；未声明 `download: true` 的来源返回能力错误。
+- `GET /api/download/file?source=wikimedia&id={trackId}` 重新校验 Provider 下载能力后，仅从固定 `upload.wikimedia.org` Host 流式传输音频，并返回附件响应头。默认上限 128 MiB、总超时 120 秒，不落盘、不缓存，也不接受任意 URL。
+- `GET /api/artwork?source={provider}&id={trackId}` 先由 Provider 查询歌曲，再从该来源固定封面 Host 下载受限图片；支持 Apple、网易和 Audius，默认上限 8 MiB。
+
+## 账号与用户状态
+
+- `POST /api/auth/register`：`{ "email", "password" }`，密码 12–200 字符。
+- `POST /api/auth/login`：建立 HttpOnly 会话 Cookie。
+- `GET /api/auth/me`：返回 `{ "user": null }` 或当前用户，未登录也是 200。
+- `POST /api/auth/logout`：删除服务端会话并清除 Cookie。
+- `GET /api/user/state`：返回 `{ "state", "revision", "updatedAt" }`。
+- `PUT /api/user/state`：提交 `{ "state", "revision" }`；修订号落后时返回 409 和 `current`，客户端合并后重试。
+
+账号写接口要求精确匹配配置的 Origin。密码使用 `scrypt` 加盐哈希，数据库仅保存 Session Token 的 SHA-256 哈希。用户状态正文和集合数量均有上限，运行时 SQLite 文件不得提交到仓库。
+
+## 地区推荐
+
+`GET /api/recommendations/region` 只读取 `LISTENER_COUNTRY_HEADER` 指定的可信两位国家代码 Header，返回 `{ "country", "source", "storesRawIp": false }`；不配置时由浏览器语言或用户手动设置回退。
 
 ## 旧接口
 
-当前 UI 使用以下兼容接口：`/api/search`、`/api/health`、`/api/resolve`、`/api/identify`、`/api/track`、`/api/lyrics` 和 `/api/download`。它们没有移除计划，修改时必须运行现有 HTTP 与浏览器回归测试。
+当前 UI 使用以下兼容接口：`/api/search`、`/api/health`、`/api/resolve`、`/api/identify`、`/api/track`、`/api/lyrics`、`/api/download` 和受限的 `/api/download/file`。它们没有移除计划，修改时必须运行现有 HTTP 与浏览器回归测试。
 
 参考项目的 `input/filter/type/page` POST 表单不是 Listener 的历史产品契约，因此没有引入危险的任意 URL 兼容层。平台 URL 仍只能通过 `/api/identify` 进行本地白名单解析。

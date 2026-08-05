@@ -19,6 +19,13 @@ test('loads bounded music defaults without secrets', () => {
     operationCacheTtlMs: 60_000,
     negativeCacheTtlMs: 5_000,
     apiRateLimit: 60,
+    databasePath: 'data/listener.sqlite',
+    sessionTtlMs: 2_592_000_000,
+    secureCookies: false,
+    countryHeader: '',
+    artworkMaxBytes: 8_388_608,
+    audioDownloadMaxBytes: 134_217_728,
+    audioDownloadTimeoutMs: 120_000,
   })
 })
 
@@ -39,6 +46,13 @@ test('normalizes provider lists and explicit environment overrides', () => {
     MUSIC_OPERATION_CACHE_TTL_MS: '200',
     MUSIC_NEGATIVE_CACHE_TTL_MS: '50',
     MUSIC_API_RATE_LIMIT: '10',
+    LISTENER_DB_PATH: '/tmp/listener-test.sqlite',
+    LISTENER_SESSION_TTL_MS: '3600000',
+    LISTENER_SECURE_COOKIES: 'true',
+    LISTENER_COUNTRY_HEADER: 'CF-IPCountry',
+    LISTENER_ARTWORK_MAX_BYTES: '4096',
+    LISTENER_AUDIO_DOWNLOAD_MAX_BYTES: '8192',
+    LISTENER_AUDIO_DOWNLOAD_TIMEOUT_MS: '5000',
   })
 
   assert.equal(config.port, 4311)
@@ -48,6 +62,13 @@ test('normalizes provider lists and explicit environment overrides', () => {
   assert.equal(config.musicBrainzContact, 'ops@example.com')
   assert.equal(config.maxRetries, 0)
   assert.equal(config.maxConcurrentProviders, 2)
+  assert.equal(config.databasePath, '/tmp/listener-test.sqlite')
+  assert.equal(config.sessionTtlMs, 3_600_000)
+  assert.equal(config.secureCookies, true)
+  assert.equal(config.countryHeader, 'cf-ipcountry')
+  assert.equal(config.artworkMaxBytes, 4_096)
+  assert.equal(config.audioDownloadMaxBytes, 8_192)
+  assert.equal(config.audioDownloadTimeoutMs, 5_000)
 })
 
 test('allows the default NetEase provider to be explicitly disabled', () => {
@@ -63,6 +84,12 @@ test('rejects unsafe configuration', () => {
     ['MUSIC_MAX_CONCURRENT_PROVIDERS', '0'],
     ['MUSIC_API_RATE_LIMIT', 'NaN'],
     ['MUSICBRAINZ_CONTACT', 'ops@example.com\nX-Test: injected'],
+    ['LISTENER_SESSION_TTL_MS', '10'],
+    ['LISTENER_COUNTRY_HEADER', 'bad header'],
+    ['LISTENER_ARTWORK_MAX_BYTES', '10'],
+    ['LISTENER_AUDIO_DOWNLOAD_MAX_BYTES', '10'],
+    ['LISTENER_AUDIO_DOWNLOAD_TIMEOUT_MS', '10'],
+    ['LISTENER_DB_PATH', 'bad\npath'],
   ]) {
     assert.throws(() => readMusicConfig({ [name]: value }), new RegExp(`invalid ${name}`))
   }

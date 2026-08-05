@@ -4,6 +4,7 @@ import { createSearchFallbackError, parseSearchPage } from '../searchLogic.mjs'
 import { isMusicIdentification, isMusicSource, isTrack } from '../types/music'
 import { isSafeUrl } from '../urlPolicy.mjs'
 import { createPublicAppleProvider } from './publicAppleProvider.mjs'
+import { artworkFilename, builtInArtwork, readArtworkResponse } from '../downloadLogic.mjs'
 import type {
   DownloadDescriptor, Lyrics, MusicIdentification, MusicProvider, MusicSearchPage, MusicSearchPageOptions, MusicSource,
   ProviderStatus, SourceCapabilities, Track,
@@ -212,7 +213,10 @@ class ApiProvider implements MusicProvider {
     const payload = await response.json() as Partial<DownloadDescriptor>
     if (typeof payload.url !== 'string' || typeof payload.filename !== 'string') throw new Error('invalid download response')
     if (!isSafeUrl(payload.url)) throw new Error('unsafe download response')
-    return { url: new URL(payload.url).toString(), filename: payload.filename }
+    const downloadUrl = new URL('/api/download/file', this.baseUrl)
+    downloadUrl.searchParams.set('source', track.source)
+    downloadUrl.searchParams.set('id', track.id)
+    return { url: downloadUrl.toString(), filename: payload.filename }
   }
 
   async status(signal?: AbortSignal): Promise<ProviderStatus> {
@@ -247,3 +251,23 @@ export const musicProvider: MusicProvider = publicAppleMode
   ? publicAppleProvider
   : new ApiProvider(apiBase, publicAppleProvider)
 export const sourceLabel = (source: MusicSource) => labels[source]
+
+export const downloadArtwork = async (track: Track, signal?: AbortSignal) => {
+  if (!isSafeUrl(track.cover)) {
+    const artwork = builtInArtwork(track.cover, track.title, track.artist)
+    return {
+      blob: new Blob([artwork.svg], { type: artwork.type }),
+      filename: artworkFilename(track.title, artwork.type),
+    }
+  }
+  const url = publicAppleMode
+    ? new URL(track.cover)
+    : new URL(`/api/artwork?source=${encodeURIComponent(track.source)}&id=${encodeURIComponent(track.id)}`, apiBase)
+  const response = await fetch(url, {
+    credentials: publicAppleMode ? 'omit' : 'include',
+    headers: { Accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif' },
+    signal: createRequestSignal(signal, 12_000),
+  })
+  const blob = await readArtworkResponse(response)
+  return { blob, filename: artworkFilename(track.title, blob.type) }
+}

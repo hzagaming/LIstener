@@ -1,0 +1,19 @@
+{
+  "name": "Listener 音乐搜索器",
+  "short_name": "Listener",
+  "description": "多来源音乐搜索、歌单、账号同步与离线应用壳。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f1e8",
+  "theme_color": "#f4f1e8",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

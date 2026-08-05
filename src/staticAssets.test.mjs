@@ -34,7 +34,7 @@ test('GitHub Pages deploys public search without probing an unavailable Node API
   assert.match(provider, /const publicAppleProvider = createPublicAppleProvider\(\{ fallback: demoProvider \}\)/)
   assert.match(provider, /export const publicAppleMode = import\.meta\.env\.VITE_PUBLIC_APPLE === 'true' \|\| !apiBase/)
   assert.match(provider, /publicAppleMode\s*\? publicAppleProvider\s*:\s*new ApiProvider\(apiBase, publicAppleProvider\)/)
-  assert.match(app, /import \{ musicProvider, publicAppleMode, sourceLabel \}/)
+  assert.match(app, /import \{ downloadArtwork, musicProvider, publicAppleMode, sourceLabel \}/)
   assert.match(app, /const identifiableSources: MusicSource\[\] = publicAppleMode \? \['apple'\] :/)
   assert.match(workflow, /actions\/checkout@v7/)
   assert.match(workflow, /actions\/setup-node@v7/)
@@ -128,12 +128,12 @@ test('playlist recommendations stay derived, cancellable, and free of previews',
   assert.match(logic, /playback === 'preview'/)
 })
 
-test('the homepage loads named artists from real providers instead of fixtures', async () => {
+test('the homepage loads global and regional pop searches from real providers instead of fixtures', async () => {
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
 
-  assert.match(app, /musicProvider\.searchPage\('周杰伦'/)
-  assert.match(app, /musicProvider\.searchPage\('Taylor Swift'/)
-  assert.match(app, /周杰伦 × Taylor Swift/)
+  assert.match(app, /const queries = \['周杰伦', 'Taylor Swift', 'The Weeknd', 'Dua Lipa', 'Bruno Mars'\]/)
+  assert.match(app, /musicProvider\.searchPage\(query, \{ provider, pageSize: 2 \}/)
+  assert.match(app, /全球流行精选/)
   assert.doesNotMatch(app, /initialTracks\.slice\(0, 4\)\.map/)
 })
 

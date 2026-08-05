@@ -1,4 +1,7 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
+import { hashPassword, sessionTokenHash, verifyPassword } from './accountStore.mjs'
+import { normalizeUserState } from './userState.mjs'
+import { pipeAudioDownload } from './audioDownload.mjs'
 
 const writeJson = (response, status, payload, headers = {}) => {
   response.writeHead(status, {
@@ -18,6 +21,46 @@ const versionedError = (code, message, meta) => ({
   error: { code, message },
 })
 
+const bodyError = (message, code) => Object.assign(new Error(message), { code })
+const readJson = async (request, maximum = 1_048_576) => {
+  const contentLength = Number(request.headers['content-length'])
+  if (Number.isFinite(contentLength) && contentLength > maximum) throw bodyError('request body is too large', 'BODY_TOO_LARGE')
+  const chunks = []
+  let size = 0
+  for await (const chunk of request) {
+    size += chunk.length
+    if (size > maximum) throw bodyError('request body is too large', 'BODY_TOO_LARGE')
+    chunks.push(chunk)
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } catch {
+    throw bodyError('request body must be valid JSON', 'INVALID_BODY')
+  }
+}
+
+const cookieValue = (request, name) => {
+  for (const entry of String(request.headers.cookie ?? '').split(';')) {
+    const [key, ...value] = entry.trim().split('=')
+    if (key === name) return value.join('=')
+  }
+  return ''
+}
+
+const sessionCookie = (token, { secure = false, maxAge }) => [
+  `listener_session=${token}`,
+  'Path=/api',
+  'HttpOnly',
+  'SameSite=Lax',
+  secure ? 'Secure' : '',
+  `Max-Age=${maxAge}`,
+].filter(Boolean).join('; ')
+
+const attachmentHeader = (filename) => {
+  const fallback = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_') || 'cover'
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+}
+
 const trackRoute = (pathname) => /^\/api\/music\/tracks\/([^/]+)\/([^/]+)(?:\/(lyrics|playback))?$/.exec(pathname)
 
 const decodePathPart = (value) => {
@@ -36,6 +79,12 @@ export const createApiHandler = ({
   now = Date.now,
   requestId = randomUUID,
   logger,
+  accountStore,
+  artworkDownloader,
+  audioDownloader,
+  sessionTtlMs = 30 * 24 * 60 * 60 * 1_000,
+  secureCookies = false,
+  countryHeader = '',
 }) => {
   const clients = new Map()
   const runAbortable = async (request, response, operation) => {
@@ -48,6 +97,33 @@ export const createApiHandler = ({
     try {
       const value = await operation(controller.signal)
       return controller.signal.aborted || response.destroyed ? null : { value }
+    } finally {
+      request.removeListener('aborted', abort)
+      response.removeListener('close', handleClose)
+    }
+  }
+  const streamAudioAttachment = async (request, response, operation, corsHeaders) => {
+    const controller = new AbortController()
+    const abort = () => controller.abort(new Error('client disconnected'))
+    const handleClose = () => { if (!response.writableEnded) abort() }
+    request.once('aborted', abort)
+    response.once('close', handleClose)
+    if (request.aborted || response.destroyed) abort()
+    try {
+      const { upstream, filename } = await operation(controller.signal)
+      response.writeHead(200, {
+        ...corsHeaders,
+        'Cache-Control': 'no-store',
+        'Content-Type': upstream.contentType,
+        ...(upstream.contentLength === null ? {} : { 'Content-Length': upstream.contentLength }),
+        'Content-Disposition': attachmentHeader(filename),
+        'X-Content-Type-Options': 'nosniff',
+      })
+      try {
+        await pipeAudioDownload(upstream, response, controller.signal)
+      } catch (error) {
+        if (!response.destroyed) response.destroy(error)
+      }
     } finally {
       request.removeListener('aborted', abort)
       response.removeListener('close', handleClose)
@@ -66,8 +142,9 @@ export const createApiHandler = ({
     }))
     const corsHeaders = {
       'Access-Control-Allow-Origin': allowedOrigin,
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
       'Access-Control-Allow-Headers': 'Accept, Content-Type',
+      'Access-Control-Allow-Credentials': 'true',
       Vary: 'Origin',
       'X-Request-ID': id,
     }
@@ -85,11 +162,18 @@ export const createApiHandler = ({
     }
     const versionedTrack = trackRoute(url.pathname)
     const isPlayback = versionedTrack?.[3] === 'playback'
-    if (request.method !== 'GET' && !(request.method === 'POST' && isPlayback)) {
+    const isAccountPost = ['/api/auth/register', '/api/auth/login', '/api/auth/logout'].includes(url.pathname)
+    const isStatePut = url.pathname === '/api/user/state'
+    if (request.method !== 'GET'
+      && !(request.method === 'POST' && (isPlayback || isAccountPost))
+      && !(request.method === 'PUT' && isStatePut)) {
       const payload = isVersionedRequest
         ? versionedError('METHOD_NOT_ALLOWED', 'GET is required', requestMeta())
         : errorPayload('METHOD_NOT_ALLOWED', 'GET is required')
       return writeJson(response, 405, payload, corsHeaders)
+    }
+    if ((isAccountPost || isStatePut) && request.headers.origin !== allowedOrigin) {
+      return writeJson(response, 403, errorPayload('ORIGIN_REJECTED', 'request origin is not allowed'), corsHeaders)
     }
 
     const clientId = request.socket.remoteAddress ?? 'unknown'
@@ -117,6 +201,110 @@ export const createApiHandler = ({
 
     try {
       const meta = requestMeta
+      const authenticatedUser = () => {
+        if (!accountStore) return null
+        const token = cookieValue(request, 'listener_session')
+        return token ? accountStore.findSession(sessionTokenHash(token)) : null
+      }
+      const createSession = (user) => {
+        const token = randomBytes(32).toString('base64url')
+        accountStore.createSession(user.id, sessionTokenHash(token), now() + sessionTtlMs)
+        return token
+      }
+      if (url.pathname === '/api/auth/register' || url.pathname === '/api/auth/login') {
+        if (!accountStore) return writeJson(response, 503, errorPayload('ACCOUNT_UNAVAILABLE', 'account service is unavailable'), corsHeaders)
+        const body = await readJson(request)
+        const email = typeof body?.email === 'string' ? body.email.trim().toLocaleLowerCase() : ''
+        const password = typeof body?.password === 'string' ? body.password : ''
+        if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 200) {
+          return writeJson(response, 400, errorPayload('INVALID_ACCOUNT', 'valid email and a 12 to 200 character password are required'), corsHeaders)
+        }
+        let user
+        if (url.pathname.endsWith('/register')) {
+          user = accountStore.createUser(email, await hashPassword(password))
+        } else {
+          const record = accountStore.findUserByEmail(email)
+          if (!record || !await verifyPassword(password, record.passwordHash)) {
+            return writeJson(response, 401, errorPayload('INVALID_CREDENTIALS', 'email or password is incorrect'), corsHeaders)
+          }
+          user = { id: record.id, email: record.email }
+        }
+        const token = createSession(user)
+        return writeJson(response, url.pathname.endsWith('/register') ? 201 : 200, { user }, {
+          ...corsHeaders,
+          'Set-Cookie': sessionCookie(token, { secure: secureCookies, maxAge: Math.floor(sessionTtlMs / 1_000) }),
+        })
+      }
+      if (url.pathname === '/api/auth/me') {
+        const user = authenticatedUser()
+        return writeJson(response, 200, { user }, corsHeaders)
+      }
+      if (url.pathname === '/api/auth/logout') {
+        const token = cookieValue(request, 'listener_session')
+        if (token && accountStore) accountStore.deleteSession(sessionTokenHash(token))
+        return writeJson(response, 200, { success: true }, {
+          ...corsHeaders,
+          'Set-Cookie': sessionCookie('', { secure: secureCookies, maxAge: 0 }),
+        })
+      }
+      if (url.pathname === '/api/user/state') {
+        const user = authenticatedUser()
+        if (!user) return writeJson(response, 401, errorPayload('AUTH_REQUIRED', 'sign in is required'), corsHeaders)
+        if (request.method === 'GET') return writeJson(response, 200, accountStore.getUserState(user.id), corsHeaders)
+        const body = await readJson(request)
+        if (!Number.isInteger(body?.revision) || body.revision < 0) {
+          return writeJson(response, 400, errorPayload('INVALID_REVISION', 'revision must be a non-negative integer'), corsHeaders)
+        }
+        const state = normalizeUserState(body.state)
+        return writeJson(response, 200, accountStore.saveUserState(user.id, state, body.revision), corsHeaders)
+      }
+      if (url.pathname === '/api/recommendations/region') {
+        const header = countryHeader ? request.headers[countryHeader.toLocaleLowerCase()] : ''
+        const value = Array.isArray(header) ? header[0] : header
+        const country = typeof value === 'string' && /^[a-z]{2}$/i.test(value) ? value.toUpperCase() : null
+        return writeJson(response, 200, {
+          country,
+          source: country ? 'trusted-proxy' : 'browser-fallback',
+          storesRawIp: false,
+        }, corsHeaders)
+      }
+      if (url.pathname === '/api/artwork') {
+        if (!artworkDownloader) return writeJson(response, 503, errorPayload('ARTWORK_UNAVAILABLE', 'artwork download is unavailable'), corsHeaders)
+        const source = url.searchParams.get('source')?.trim()
+        const trackId = url.searchParams.get('id')?.trim()
+        if (!source || !trackId || trackId.length > 256 || !service.sources?.includes(source)) {
+          return writeJson(response, 400, errorPayload('INVALID_TRACK', 'source and id are required'), corsHeaders)
+        }
+        const result = await runAbortable(request, response, async (signal) => {
+          const track = await service.lookup(source, trackId, signal)
+          return artworkDownloader({ source, url: track.cover, title: track.title, signal })
+        })
+        if (!result) return
+        const { bytes, contentType, filename } = result.value
+        response.writeHead(200, {
+          ...corsHeaders,
+          'Cache-Control': 'private, max-age=300',
+          'Content-Type': contentType,
+          'Content-Length': bytes.byteLength,
+          'Content-Disposition': attachmentHeader(filename),
+          'X-Content-Type-Options': 'nosniff',
+        })
+        return response.end(bytes)
+      }
+      if (url.pathname === '/api/download/file') {
+        if (!audioDownloader) return writeJson(response, 503, errorPayload('DOWNLOAD_UNAVAILABLE', 'audio download is unavailable'), corsHeaders)
+        const source = url.searchParams.get('source')?.trim()
+        const trackId = url.searchParams.get('id')?.trim()
+        if (!source || !trackId || trackId.length > 256 || !service.sources?.includes(source)) {
+          return writeJson(response, 400, errorPayload('INVALID_TRACK', 'source and id are required'), corsHeaders)
+        }
+        await streamAudioAttachment(request, response, async (signal) => {
+          const descriptor = await service.download(source, trackId, signal)
+          const upstream = await audioDownloader({ source, url: descriptor.url, signal })
+          return { upstream, filename: descriptor.filename }
+        }, corsHeaders)
+        return
+      }
       if (url.pathname === '/api/music/providers') {
         return writeJson(response, 200, versionedPayload({ providers: service.providerDetails ?? [] }, meta()), corsHeaders)
       }
@@ -254,6 +442,15 @@ export const createApiHandler = ({
         isVersioned ? versionedError(code, safeMessage, errorMeta) : errorPayload(code, safeMessage),
         corsHeaders,
       )
+      if (error?.code === 'BODY_TOO_LARGE') return writeError(413, error.code, message)
+      if (error?.code === 'INVALID_BODY') return writeError(400, error.code, message)
+      if (error?.code === 'ACCOUNT_EXISTS') return writeError(409, error.code, message)
+      if (error?.code === 'STATE_CONFLICT') {
+        return writeJson(response, 409, { error: { code: error.code, message }, current: error.current }, corsHeaders)
+      }
+      if (message === 'invalid user state' || message === 'user state is too large') {
+        return writeError(message.includes('too large') ? 413 : 400, 'INVALID_USER_STATE', message)
+      }
       if (message === 'unknown music source') {
         return writeError(404, 'UNKNOWN_SOURCE', message)
       }

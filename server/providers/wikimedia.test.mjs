@@ -34,7 +34,7 @@ test('searches Wikimedia Commons audio with bounded pagination and normalizes pl
     cover: 'gold',
     sourceUrl: 'https://commons.wikimedia.org/wiki/File:Beethoven_-_Moonlight_sonata.ogg',
     quality: 'standard',
-    capabilities: { playback: 'full', lyrics: false, download: false },
+    capabilities: { playback: 'full', lyrics: false, download: true },
   }])
   assert.equal(request.url.origin, 'https://commons.wikimedia.org')
   assert.equal(request.url.pathname, '/w/api.php')
@@ -50,9 +50,9 @@ test('searches Wikimedia Commons audio with bounded pagination and normalizes pl
   assert.equal(request.url.searchParams.get('formatversion'), '2')
   assert.equal(request.url.searchParams.get('origin'), '*')
   assert.equal(request.options.redirect, 'manual')
-  assert.equal(request.options.headers['User-Agent'], 'Listener/0.4.23 (+https://github.com/hzagaming/LIstener)')
+  assert.equal(request.options.headers['User-Agent'], 'Listener/0.5.0 (+https://github.com/hzagaming/LIstener)')
   assert.equal(provider.capabilities.playback, true)
-  assert.equal(provider.capabilities.download, false)
+  assert.equal(provider.capabilities.download, true)
   assert.equal(provider.maxSearchResults, 10)
 })
 
@@ -82,6 +82,10 @@ test('looks up and resolves Wikimedia page IDs without accepting mismatched resp
 
   assert.equal((await provider.lookup('57480')).id, '57480')
   assert.equal(await provider.resolve('57480'), 'https://upload.wikimedia.org/wikipedia/commons/6/6f/Moonlight.ogg?download=1')
+  assert.deepEqual(await provider.download('57480'), {
+    url: 'https://upload.wikimedia.org/wikipedia/commons/6/6f/Moonlight.ogg?download=1',
+    filename: 'Beethoven - Moonlight sonata.ogg',
+  })
   assert.equal(requests[0].searchParams.get('pageids'), '57480')
   assert.equal(requests[0].searchParams.has('generator'), false)
   await assert.rejects(() => provider.lookup('../57480'), /invalid Wikimedia track id/)

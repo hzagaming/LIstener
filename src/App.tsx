@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowRight, Disc3, Download, ExternalLink, FileText, Heart, Home, Library,
+  ArrowRight, CircleUserRound, Cloud, CloudOff, Disc3, Download, ExternalLink, FileDown, FileText, Heart, Home, ImageDown, Library,
   ListMusic, ListPlus, LoaderCircle, Menu, Pause, Play, Plus, Repeat, Repeat1,
-  Search, Shuffle, SkipBack, SkipForward, Sparkles, Trash2, Upload,
+  Search, Shuffle, SkipBack, SkipForward, Sparkles, Trash2, Upload, MapPin,
   Volume2, VolumeX, Waves, X,
 } from 'lucide-react'
 import { playlists, tracks as initialTracks } from './data/catalog'
@@ -16,16 +16,32 @@ import {
   mergeRecommendationPages, nextPlayableRecommendation, recommendationSeed, shouldPrefetchRecommendations,
 } from './recommendationLogic.mjs'
 import { filterTracksByPlayback, searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
-import { musicProvider, publicAppleMode, sourceLabel } from './services/musicProvider'
+import { downloadArtwork, musicProvider, publicAppleMode, sourceLabel } from './services/musicProvider'
+import { accountApi, accountAvailable } from './services/account'
+import { mergeLibraryData, normalizeLibraryData } from './syncLogic.mjs'
 import { isPlaylist, isTrack, musicSources, trackKey } from './types/music'
 import { isSafeUrl } from './urlPolicy.mjs'
+import type { AccountUser } from './services/account'
+import type { LibraryData, PlaybackHistory } from './syncLogic.mjs'
 import type { MusicIdentification, MusicSource, Playlist, ProviderStatus, Track } from './types/music'
 
-type View = 'discover' | 'search' | 'library'
+type View = 'discover' | 'search' | 'library' | 'account'
 type PlayMode = 'toggle' | 'play'
 type PlaybackFilter = 'no-preview' | 'full' | 'all'
 type PlaylistRecommendation = { track: Track; reason: string }
 const identifiableSources: MusicSource[] = publicAppleMode ? ['apple'] : musicSources.filter((source) => !['demo', 'local', 'fixture'].includes(source))
+const libraryValidators = { isTrack, isPlaylist }
+
+const browserRegion = () => {
+  const parts = navigator.language.split('-')
+  const explicit = parts[1]?.toUpperCase()
+  if (explicit && /^[A-Z]{2}$/.test(explicit)) return explicit
+  return parts[0].toLocaleLowerCase() === 'zh' ? 'CN' : 'US'
+}
+
+const regionalQuery = (region: string) => ({
+  CN: '华语流行', US: 'US pop', GB: 'UK pop', JP: 'J-pop', KR: 'K-pop', FR: 'French pop', DE: 'German pop',
+})[region] || 'global pop'
 
 const readStoredTracks = (key: string, fallback: Track[], allowEmpty = false) => {
   try {
@@ -56,6 +72,30 @@ const readStoredNumber = (key: string, fallback: number) => {
     return Number.isFinite(value) ? value : fallback
   } catch {
     return fallback
+  }
+}
+
+const readStoredBoolean = (key: string, fallback: boolean) => {
+  try {
+    const value = localStorage.getItem(key)
+    return value === null ? fallback : value === 'true'
+  } catch {
+    return fallback
+  }
+}
+
+const readStoredText = (key: string, fallback: string) => {
+  try { return localStorage.getItem(key) || fallback } catch { return fallback }
+}
+
+const readStoredHistory = () => {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem('listener.history') ?? '[]')
+    return Array.isArray(value)
+      ? value.filter((item): item is PlaybackHistory => Boolean(item && typeof item === 'object' && isTrack(item.track) && Number.isSafeInteger(item.playedAt))).slice(0, 500)
+      : []
+  } catch {
+    return []
   }
 }
 
@@ -127,13 +167,14 @@ type TrackRowProps = {
   onPlaylist: () => void
   onLyrics: () => void
   onDownload: () => void
+  onCoverDownload: () => void
   onRemove?: (event: React.MouseEvent<HTMLButtonElement>) => void
   context?: string
 }
 
 function TrackRow({
   track, index, current, playing, pending, buffering, liked, onPlay, onLike, onPlaylist,
-  onLyrics, onDownload, onRemove, context,
+  onLyrics, onDownload, onCoverDownload, onRemove, context,
 }: TrackRowProps) {
   const playbackUnavailable = track.capabilities.playback === 'none'
   const visualState = playbackVisualState({
@@ -166,6 +207,7 @@ function TrackRow({
         <button className="icon-button" aria-label={`加入歌单 ${track.title}`} title="加入歌单" onClick={onPlaylist}><ListPlus /></button>
         <button className={`icon-button ${track.capabilities.lyrics ? '' : 'is-unavailable'}`} aria-disabled={!track.capabilities.lyrics} aria-label={track.capabilities.lyrics ? `查看歌词 ${track.title}` : `歌词不可用：${track.title}`} title={track.capabilities.lyrics ? '查看歌词' : '来源未提供歌词，点击了解详情'} onClick={onLyrics}><FileText /></button>
         <button className={`icon-button ${track.capabilities.download ? '' : 'is-unavailable'}`} aria-disabled={!track.capabilities.download} aria-label={track.capabilities.download ? `下载 ${track.title}` : `下载不可用：${track.title}`} title={track.capabilities.download ? '下载' : '来源未授权下载，点击了解详情'} onClick={onDownload}><Download /></button>
+        <button className="icon-button" aria-label={`下载封面 ${track.title}`} title="下载封面" onClick={onCoverDownload}><ImageDown /></button>
         <a className="icon-button" href={track.sourceUrl} target="_blank" rel="noreferrer" aria-label={`在 ${sourceLabel(track.source)} 打开 ${track.title}`} title="在来源中打开"><ExternalLink /></a>
         <button aria-label={`${liked ? '取消收藏' : '收藏'} ${track.title}`} className={`like-button ${liked ? 'liked' : ''}`} onClick={onLike}><Heart fill={liked ? 'currentColor' : 'none'} /></button>
         {onRemove && <button className="icon-button danger track-row__remove" aria-label={`移除 ${track.title}`} title="移除" onClick={onRemove}><Trash2 /></button>}
@@ -203,6 +245,18 @@ function App() {
   ))
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>(readStoredPlaylists)
   const [localTracks, setLocalTracks] = useState<Track[]>([])
+  const [history, setHistory] = useState<PlaybackHistory[]>(readStoredHistory)
+  const [regionalRecommendations, setRegionalRecommendations] = useState(() => readStoredBoolean('listener.regional', true))
+  const [region, setRegion] = useState(() => readStoredText('listener.region', browserRegion()).toUpperCase())
+  const [online, setOnline] = useState(navigator.onLine)
+  const [user, setUser] = useState<AccountUser | null>(null)
+  const [accountChecking, setAccountChecking] = useState(accountAvailable)
+  const [accountMode, setAccountMode] = useState<'login' | 'register'>('login')
+  const [accountEmail, setAccountEmail] = useState('')
+  const [accountPassword, setAccountPassword] = useState('')
+  const [accountBusy, setAccountBusy] = useState(false)
+  const [accountError, setAccountError] = useState('')
+  const [syncStatus, setSyncStatus] = useState(accountAvailable ? '本地保存' : '静态版 · 本地保存')
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null)
   const [playlistRecommendations, setPlaylistRecommendations] = useState<PlaylistRecommendation[]>([])
   const [recommendationLoading, setRecommendationLoading] = useState(false)
@@ -264,6 +318,12 @@ function App() {
   const mobileMenuRef = useRef<HTMLButtonElement>(null)
   const mobileCloseRef = useRef<HTMLButtonElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dataImportRef = useRef<HTMLInputElement>(null)
+  const cloudRevisionRef = useRef(0)
+  const cloudReadyRef = useRef(false)
+  const cloudSavingRef = useRef(false)
+  const cloudTimerRef = useRef<number>()
+  const lastSyncedRef = useRef('')
   const playlistsHeadingRef = useRef<HTMLHeadingElement>(null)
   const likedHeadingRef = useRef<HTMLHeadingElement>(null)
   const lastAudibleVolumeRef = useRef(volume || 0.72)
@@ -369,6 +429,28 @@ function App() {
   }, [repeatMode])
 
   useEffect(() => {
+    writeStorage('listener.history', history.map((item) => ({
+      ...item,
+      track: prepareStoredTrack(item.track),
+    })))
+  }, [history])
+
+  useEffect(() => {
+    writeStorage('listener.regional', String(regionalRecommendations))
+    writeStorage('listener.region', region)
+  }, [region, regionalRecommendations])
+
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine)
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!pendingDeletePlaylistId) return
     const timeout = window.setTimeout(() => setPendingDeletePlaylistId(null), 5_000)
     return () => window.clearTimeout(timeout)
@@ -412,6 +494,7 @@ function App() {
     lyricsControllerRef.current?.abort()
     if (mediaRetryTimerRef.current) window.clearTimeout(mediaRetryTimerRef.current)
     if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
+    if (cloudTimerRef.current) window.clearTimeout(cloudTimerRef.current)
     for (const { url } of localFilesRef.current.values()) URL.revokeObjectURL(url)
   }, [])
 
@@ -551,6 +634,121 @@ function App() {
   const resultSources = useMemo(() => [...new Set(results.map((track) => track.source))], [results])
   const publicSearchFallback = searchDegraded && resultSources.includes('apple')
   const likedTracks = useMemo(() => [...liked.values()], [liked])
+  const portableLibrary = useMemo(() => normalizeLibraryData({
+    version: 1,
+    liked: prepareStoredTracks(likedTracks),
+    playlists: userPlaylists.map((playlist) => ({ ...playlist, tracks: prepareStoredTracks(playlist.tracks) })),
+    queue: prepareStoredTracks(queue),
+    current: current.source === 'local' ? null : prepareStoredTrack(current),
+    history: history.filter((item) => item.track.source !== 'local').map((item) => ({ ...item, track: prepareStoredTrack(item.track) })),
+    settings: { volume, repeat: repeatMode, regionalRecommendations, region },
+  }, libraryValidators), [current, history, likedTracks, queue, region, regionalRecommendations, repeatMode, userPlaylists, volume])
+  const portableLibraryRef = useRef<LibraryData>(portableLibrary)
+  portableLibraryRef.current = portableLibrary
+
+  const applyLibraryData = (data: LibraryData) => {
+    setLiked(new Map(data.liked.map((track) => [trackKey(track), track])))
+    setUserPlaylists(data.playlists)
+    setQueue(playableTracks(data.queue))
+    if (data.current) setCurrent(data.current)
+    setHistory(data.history)
+    setVolume(data.settings.volume)
+    setRepeatMode(data.settings.repeat)
+    setRegionalRecommendations(data.settings.regionalRecommendations)
+    if (data.settings.region) setRegion(data.settings.region)
+  }
+
+  const saveCloudState = async (snapshot = portableLibraryRef.current) => {
+    if (!user || !cloudReadyRef.current || cloudSavingRef.current || !online) return
+    const serialized = JSON.stringify(snapshot)
+    if (serialized === lastSyncedRef.current) return
+    cloudSavingRef.current = true
+    let saveCompleted = false
+    setSyncStatus('正在同步…')
+    try {
+      const saved = await accountApi.saveState(snapshot, cloudRevisionRef.current)
+      cloudRevisionRef.current = saved.revision
+      lastSyncedRef.current = serialized
+      saveCompleted = true
+      setSyncStatus('云端已同步')
+    } catch (error) {
+      const conflict = error as { code?: string; current?: { state: unknown; revision: number } }
+      if (conflict.code === 'STATE_CONFLICT' && conflict.current) {
+        try {
+          const merged = mergeLibraryData(snapshot, conflict.current.state, libraryValidators)
+          applyLibraryData(merged)
+          const saved = await accountApi.saveState(merged, conflict.current.revision)
+          cloudRevisionRef.current = saved.revision
+          lastSyncedRef.current = JSON.stringify(merged)
+          saveCompleted = true
+          setSyncStatus('冲突已合并')
+        } catch {
+          setSyncStatus('等待网络同步')
+        }
+      } else {
+        setSyncStatus('等待网络同步')
+      }
+    } finally {
+      cloudSavingRef.current = false
+      if (saveCompleted && cloudReadyRef.current
+        && JSON.stringify(portableLibraryRef.current) !== lastSyncedRef.current) {
+        if (cloudTimerRef.current) window.clearTimeout(cloudTimerRef.current)
+        cloudTimerRef.current = window.setTimeout(() => { void saveCloudState() }, 0)
+      }
+    }
+  }
+
+  const initializeCloud = async () => {
+    const remote = await accountApi.loadState()
+    cloudRevisionRef.current = remote.revision
+    const merged = mergeLibraryData(portableLibraryRef.current, remote.state, libraryValidators, {
+      preferSecondaryState: remote.state !== null,
+    })
+    const serialized = JSON.stringify(merged)
+    cloudReadyRef.current = true
+    applyLibraryData(merged)
+    if (remote.state === null || serialized !== JSON.stringify(normalizeLibraryData(remote.state, libraryValidators))) {
+      try {
+        const saved = await accountApi.saveState(merged, remote.revision)
+        cloudRevisionRef.current = saved.revision
+      } catch {
+        setSyncStatus('等待网络同步')
+        return
+      }
+    }
+    lastSyncedRef.current = serialized
+    setSyncStatus('云端已同步')
+  }
+
+  useEffect(() => {
+    if (!accountAvailable) return
+    let active = true
+    void accountApi.me().then(async ({ user: currentUser }) => {
+      if (!active || !currentUser) return
+      setUser(currentUser)
+      await initializeCloud()
+    }).catch(() => undefined).finally(() => { if (active) setAccountChecking(false) })
+    return () => { active = false }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!accountAvailable) return
+    let active = true
+    void accountApi.region().then((result) => {
+      if (!active || !result.country) return
+      try {
+        if (!localStorage.getItem('listener.region')) setRegion(result.country)
+      } catch { setRegion(result.country) }
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    if (!user || !cloudReadyRef.current || !online) return
+    if (cloudTimerRef.current) window.clearTimeout(cloudTimerRef.current)
+    cloudTimerRef.current = window.setTimeout(() => { void saveCloudState() }, 1_000)
+    return () => { if (cloudTimerRef.current) window.clearTimeout(cloudTimerRef.current) }
+  }, [online, portableLibrary, user]) // eslint-disable-line react-hooks/exhaustive-deps
   const selectedPlaylist = useMemo(
     () => userPlaylists.find((playlist) => playlist.id === selectedPlaylistId) ?? null,
     [selectedPlaylistId, userPlaylists],
@@ -591,15 +789,27 @@ function App() {
     homeControllerRef.current = controller
     setHomeLoading(true)
     setHomeError(false)
-    const provider = publicAppleMode ? 'apple' : 'netease'
-    void Promise.allSettled([
-      musicProvider.searchPage('周杰伦', { provider, pageSize: 4 }, controller.signal),
-      musicProvider.searchPage('Taylor Swift', { provider, pageSize: 4 }, controller.signal),
-    ]).then(([jay, taylor]) => {
+    const provider = publicAppleMode ? 'apple' : 'all'
+    const queries = ['周杰伦', 'Taylor Swift', 'The Weeknd', 'Dua Lipa', 'Bruno Mars']
+    if (regionalRecommendations) queries.push(regionalQuery(region))
+    else queries.push('Ariana Grande')
+    void (async () => {
+      const pages: PromiseSettledResult<Awaited<ReturnType<typeof musicProvider.searchPage>>>[] = []
+      for (let index = 0; index < queries.length; index += 2) {
+        pages.push(...await Promise.allSettled(queries.slice(index, index + 2).map((query) => (
+          musicProvider.searchPage(query, { provider, pageSize: 2 }, controller.signal)
+        ))))
+        if (controller.signal.aborted) return
+      }
       if (controller.signal.aborted) return
-      const jayTracks = jay.status === 'fulfilled' ? jay.value.tracks : []
-      const taylorTracks = taylor.status === 'fulfilled' ? taylor.value.tracks : []
-      const candidates = [...jayTracks.slice(0, 2), ...taylorTracks.slice(0, 2)]
+      const candidates = pages.flatMap((page) => {
+        if (page.status !== 'fulfilled') return []
+        const tracks = page.value.tracks.filter((track) => !['demo', 'fixture'].includes(track.source))
+        const selected = tracks.find((track) => track.capabilities.playback === 'full')
+          ?? tracks.find((track) => track.capabilities.playback === 'preview')
+          ?? tracks[0]
+        return selected ? [selected] : []
+      })
       const seen = new Set<string>()
       const unique = candidates.filter((track) => {
         const key = trackKey(track)
@@ -609,7 +819,7 @@ function App() {
       })
       setHomeTracks(unique)
       setHomeError(!unique.length)
-    }).finally(() => {
+    })().finally(() => {
       if (homeControllerRef.current === controller) homeControllerRef.current = null
       if (!controller.signal.aborted) setHomeLoading(false)
     })
@@ -617,7 +827,7 @@ function App() {
       if (homeControllerRef.current === controller) homeControllerRef.current = null
       controller.abort()
     }
-  }, [homeRevision])
+  }, [homeRevision, region, regionalRecommendations])
 
   const loadRecommendationPage = async (playlist: Playlist, page: number, append: boolean) => {
     if (recommendationLoadingRef.current) return null
@@ -1056,6 +1266,94 @@ function App() {
     }
   }
 
+  const downloadCover = async (track: Track) => {
+    try {
+      const { blob, filename } = await downloadArtwork(track)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.append(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+      showNotice('封面已交给浏览器下载')
+    } catch {
+      showNotice('封面下载失败，请稍后重试')
+    }
+  }
+
+  const recordHistory = (track: Track) => {
+    if (track.source === 'local' || track.source === 'demo') return
+    const playedAt = Date.now()
+    setHistory((previous) => {
+      const latest = previous[0]
+      if (latest && trackKey(latest.track) === trackKey(track) && playedAt - latest.playedAt < 30_000) return previous
+      return [{ track, playedAt }, ...previous.filter((item) => trackKey(item.track) !== trackKey(track))].slice(0, 500)
+    })
+  }
+
+  const submitAccount = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!accountAvailable) return setAccountError('静态站未连接账号后端，请使用 JSON 导入导出迁移')
+    setAccountBusy(true)
+    setAccountError('')
+    cloudReadyRef.current = false
+    try {
+      const result = accountMode === 'register'
+        ? await accountApi.register(accountEmail, accountPassword)
+        : await accountApi.login(accountEmail, accountPassword)
+      setUser(result.user)
+      setAccountPassword('')
+      await initializeCloud()
+      showNotice(accountMode === 'register' ? '账号已创建并完成同步' : '登录成功，设备记录已合并')
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : '账号操作失败')
+    } finally {
+      setAccountBusy(false)
+      setAccountChecking(false)
+    }
+  }
+
+  const logout = async () => {
+    setAccountBusy(true)
+    try { await accountApi.logout() } catch { /* local sign-out still completes */ }
+    cloudReadyRef.current = false
+    cloudRevisionRef.current = 0
+    lastSyncedRef.current = ''
+    setUser(null)
+    setSyncStatus('本地保存')
+    setAccountBusy(false)
+    showNotice('已退出，当前设备记录仍保留')
+  }
+
+  const exportLibrary = () => {
+    const blob = new Blob([JSON.stringify(portableLibraryRef.current, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `listener-backup-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.append(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+    showNotice('记录已导出为 JSON')
+  }
+
+  const importLibrary = async (files: FileList | null) => {
+    const file = files?.[0]
+    if (!file) return
+    if (file.size > 2_097_152) return showNotice('备份文件不能超过 2 MB')
+    try {
+      const imported = normalizeLibraryData(JSON.parse(await file.text()), libraryValidators)
+      const merged = mergeLibraryData(imported, portableLibraryRef.current, libraryValidators)
+      applyLibraryData(merged)
+      showNotice('导入完成，已与当前设备记录合并')
+    } catch {
+      showNotice('备份文件格式无效')
+    }
+  }
+
   const importLocalTracks = async (files: FileList | null) => {
     if (!files?.length) return
     const imported: Track[] = []
@@ -1375,6 +1673,7 @@ function App() {
           <button aria-current={view === 'discover' ? 'page' : undefined} className={view === 'discover' ? 'active' : ''} onClick={() => navigate('discover')}><Home />发现音乐</button>
           <button aria-current={view === 'search' ? 'page' : undefined} className={view === 'search' ? 'active' : ''} onClick={() => navigate('search')}><Search />聚合搜索</button>
           <button aria-current={view === 'library' ? 'page' : undefined} className={view === 'library' ? 'active' : ''} onClick={() => navigateLibrarySection('liked')}><Library />我的收藏</button>
+          <button aria-current={view === 'account' ? 'page' : undefined} className={view === 'account' ? 'active' : ''} onClick={() => navigate('account')}><CircleUserRound />账号与同步</button>
         </nav>
 
         <div className="sidebar__section-label">我的音乐</div>
@@ -1385,9 +1684,9 @@ function App() {
         </nav>
 
         <div className="source-card">
-          <span><Sparkles /> {providerChecking ? '正在连接音乐源' : providerStatus.online ? `${providerStatus.sources.length} 个音乐源已接入` : '演示模式'}</span>
-          <p>{providerChecking ? '正在检查音乐源…' : providerStatus.online ? providerStatus.sources.map(sourceLabel).join(' · ') : '音乐源暂时离线'}</p>
-          <div className={`source-card__dots ${providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`}><i /></div>
+          <span>{online ? <Sparkles /> : <CloudOff />} {online ? providerChecking ? '正在连接音乐源' : providerStatus.online ? `${providerStatus.sources.length} 个音乐源已接入` : '演示模式' : '离线模式'}</span>
+          <p>{online ? providerChecking ? '正在检查音乐源…' : providerStatus.online ? providerStatus.sources.map(sourceLabel).join(' · ') : '音乐源暂时离线' : '应用壳与本地记录仍可使用'}</p>
+          <div className={`source-card__dots ${!online ? 'offline' : providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`}><i /></div>
         </div>
       </div>
 
@@ -1402,8 +1701,8 @@ function App() {
             <kbd>⌘/Ctrl K</kbd>
           </button>
           <div className="topbar__actions">
-            <div className="source-selector" role="status" aria-live="polite"><span className={`status-dot ${providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`} />{providerChecking ? '正在连接' : providerStatus.online ? '音乐源在线' : '演示模式'}</div>
-            <div className="avatar" aria-hidden="true">L</div>
+            <div className="source-selector" role="status" aria-live="polite"><span className={`status-dot ${!online ? 'offline' : providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`} />{!online ? '离线模式' : providerChecking ? '正在连接' : providerStatus.online ? '音乐源在线' : '演示模式'}</div>
+            <button className="avatar" aria-label={user ? `账号 ${user.email}` : '登录或迁移记录'} title={user ? user.email : '账号与同步'} onClick={() => navigate('account')}>{user?.email[0]?.toUpperCase() || 'L'}</button>
           </div>
         </header>
 
@@ -1430,7 +1729,7 @@ function App() {
 
             <section className="content-section">
               <div className="section-heading">
-                <div><span className="section-index">01</span><h2>周杰伦 × Taylor Swift</h2></div>
+                <div><span className="section-index">01</span><h2>全球流行精选{regionalRecommendations ? ` · ${region}` : ''}</h2></div>
                 <span className="searching-state" aria-live="polite">{homeLoading ? '正在加载真实曲目…' : homeError ? '真实音乐源暂不可用' : `来自真实音乐源 · ${homeTracks.length} 首`}</span>
               </div>
               {homeTracks.length ? <div className="track-grid">
@@ -1457,10 +1756,11 @@ function App() {
                       <SourceBadge track={track} />
                     </div>
                     <button className={`like-button ${isLiked ? 'liked' : ''}`} onClick={() => toggleLike(track)} aria-label={`${isLiked ? '取消收藏' : '收藏'} ${track.title}`}><Heart fill={isLiked ? 'currentColor' : 'none'} /></button>
+                    <button className="cover-download-card" onClick={() => void downloadCover(track)} aria-label={`下载封面 ${track.title}`} title="下载封面"><ImageDown /></button>
                   </article>
                   )
                 })}
-              </div> : <div className="compact-empty home-empty">{homeLoading ? <LoaderCircle className="spin" /> : <Sparkles />}<span>{homeLoading ? '正在获取周杰伦与 Taylor Swift 的真实歌曲' : '暂时无法获取主页真实歌曲'}</span>{!homeLoading && <button onClick={() => setHomeRevision((value) => value + 1)}>重新获取</button>}</div>}
+              </div> : <div className="compact-empty home-empty">{homeLoading ? <LoaderCircle className="spin" /> : <Sparkles />}<span>{homeLoading ? '正在获取真实流行歌曲' : '暂时无法获取主页真实歌曲'}</span>{!homeLoading && <button onClick={() => setHomeRevision((value) => value + 1)}>重新获取</button>}</div>}
             </section>
 
             <section className="content-section">
@@ -1541,10 +1841,78 @@ function App() {
                     onPlaylist={() => openPlaylistDialog(track)}
                     onLyrics={() => void openLyrics(track)}
                     onDownload={() => void downloadTrack(track)}
+                    onCoverDownload={() => void downloadCover(track)}
                   />
                 )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : inputMode === 'too-long' ? '搜索词太长' : sourceResults.length ? '当前播放范围没有结果' : searchDegraded ? '聚合服务暂不可用' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : inputMode === 'too-long' ? '请缩短到 100 个字符以内，再重新搜索。' : sourceResults.length ? '可切换到“完整与元数据”或“包含试听”查看其他曲目。' : searchDegraded ? '备用音乐源也没有匹配结果，请点击重试。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
               </div>
             </section>
+          </div>
+        )}
+
+        {view === 'account' && (
+          <div className="page page--account">
+            <div className="account-heading">
+              <span className="eyebrow">ACCOUNT · SYNC · OFFLINE</span>
+              <h1>账号与记录</h1>
+              <p>收藏、歌单、队列、播放记录和偏好可在设备间迁移；服务端不保存原始 IP。</p>
+            </div>
+
+            {accountChecking ? (
+              <div className="account-loading"><LoaderCircle className="spin" />正在检查登录状态…</div>
+            ) : user ? (
+              <section className="account-panel account-panel--identity">
+                <div className="account-panel__header"><div><span className="eyebrow">SIGNED IN</span><h2>{user.email}</h2></div><span className={`sync-pill ${online ? '' : 'offline'}`}>{online ? <Cloud /> : <CloudOff />}{syncStatus}</span></div>
+                <p>数据使用带修订号的合并同步；另一台设备有新记录时不会直接覆盖本机收藏。</p>
+                <div className="account-actions">
+                  <button className="secondary-button" disabled={!online || accountBusy} onClick={() => void saveCloudState()}><Cloud />立即同步</button>
+                  <button className="secondary-button" disabled={accountBusy} onClick={() => void logout()}><CircleUserRound />退出登录</button>
+                </div>
+              </section>
+            ) : (
+              <section className="account-panel account-panel--auth">
+                <div><span className="eyebrow">{accountMode === 'login' ? 'WELCOME BACK' : 'CREATE ACCOUNT'}</span><h2>{accountMode === 'login' ? '登录 Listener' : '注册 Listener'}</h2><p>{accountAvailable ? '邮箱与密码仅发送到当前 Listener 后端，密码使用 scrypt 哈希保存。' : '当前是静态版本，账号后端不可用；仍可使用下方 JSON 迁移。'}</p></div>
+                <form className="account-form" onSubmit={submitAccount}>
+                  <label htmlFor="account-email">邮箱</label>
+                  <input id="account-email" type="email" autoComplete="email" required maxLength={254} value={accountEmail} onChange={(event) => setAccountEmail(event.target.value)} placeholder="you@example.com" />
+                  <label htmlFor="account-password">密码</label>
+                  <input id="account-password" type="password" autoComplete={accountMode === 'login' ? 'current-password' : 'new-password'} required minLength={12} maxLength={200} value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} placeholder="至少 12 个字符" />
+                  {accountError && <p className="account-error" role="alert">{accountError}</p>}
+                  <div className="account-actions">
+                    <button className="primary-button" disabled={!accountAvailable || accountBusy} type="submit">{accountBusy ? <LoaderCircle className="spin" /> : <CircleUserRound />}{accountMode === 'login' ? '登录' : '注册并同步'}</button>
+                    <button className="text-button" type="button" onClick={() => { setAccountMode((mode) => mode === 'login' ? 'register' : 'login'); setAccountError('') }}>{accountMode === 'login' ? '没有账号？注册' : '已有账号？登录'}</button>
+                  </div>
+                </form>
+              </section>
+            )}
+
+            <div className="account-grid">
+              <section className="account-panel">
+                <div className="account-panel__header"><div><span className="eyebrow">PORTABLE DATA</span><h2>设备迁移</h2></div><FileDown /></div>
+                <p>导出文件不包含密码、Cookie、本地音频文件或临时播放地址；导入会与当前记录去重合并。</p>
+                <div className="account-actions">
+                  <button className="secondary-button" onClick={exportLibrary}><FileDown />导出记录 JSON</button>
+                  <button className="secondary-button" onClick={() => dataImportRef.current?.click()}><Upload />导入记录</button>
+                  <input ref={dataImportRef} className="visually-hidden" type="file" accept="application/json,.json" aria-label="选择 Listener JSON 备份" onChange={(event) => { void importLibrary(event.target.files); event.target.value = '' }} />
+                </div>
+              </section>
+
+              <section className="account-panel">
+                <div className="account-panel__header"><div><span className="eyebrow">PRIVATE REGION</span><h2>地区推荐</h2></div><MapPin /></div>
+                <p>后端只读取可信反向代理提供的两位国家代码，不记录原始 IP；你也可以手动选择或彻底关闭。</p>
+                <label className="setting-row"><span><strong>启用地区推荐</strong><small>仅影响主页流行搜索词</small></span><input type="checkbox" checked={regionalRecommendations} onChange={(event) => setRegionalRecommendations(event.target.checked)} /></label>
+                <label className="region-field" htmlFor="region-select">推荐地区<select id="region-select" value={region} onChange={(event) => setRegion(event.target.value)}><option value="CN">中国大陆</option><option value="US">美国</option><option value="GB">英国</option><option value="JP">日本</option><option value="KR">韩国</option><option value="FR">法国</option><option value="DE">德国</option></select></label>
+              </section>
+
+              <section className="account-panel">
+                <div className="account-panel__header"><div><span className="eyebrow">OFFLINE READY</span><h2>{online ? '离线应用已准备' : '当前处于离线模式'}</h2></div>{online ? <Cloud /> : <CloudOff />}</div>
+                <p>生产版本会缓存应用壳与同源构建资源，不缓存账号 API、第三方音频或私人云端数据；本地音乐只在当前页面会话保留。</p>
+              </section>
+
+              <section className="account-panel">
+                <div className="account-panel__header"><div><span className="eyebrow">PLAY HISTORY</span><h2>最近播放</h2></div>{history.length > 0 && <button className="text-button danger" onClick={() => setHistory([])}>清空</button>}</div>
+                {history.length ? <ol className="history-list">{history.slice(0, 8).map((item) => <li key={`${trackKey(item.track)}:${item.playedAt}`}><span><strong>{item.track.title}</strong><small>{item.track.artist}</small></span><time dateTime={new Date(item.playedAt).toISOString()}>{new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(item.playedAt)}</time></li>)}</ol> : <p>播放真实歌曲后，记录会出现在这里。</p>}
+              </section>
+            </div>
           </div>
         )}
 
@@ -1574,6 +1942,7 @@ function App() {
                       onPlaylist={() => openPlaylistDialog(track)}
                       onLyrics={() => void openLyrics(track)}
                       onDownload={() => void downloadTrack(track)}
+                      onCoverDownload={() => void downloadCover(track)}
                       onRemove={(event) => {
                         focusAfterRemoval(event.currentTarget, '#local-tracks', '.track-row__remove', '#playlists-heading')
                         removeLocalTrack(track)
@@ -1619,6 +1988,7 @@ function App() {
                       onPlaylist={() => openPlaylistDialog(track)}
                       onLyrics={() => void openLyrics(track)}
                       onDownload={() => void downloadTrack(track)}
+                      onCoverDownload={() => void downloadCover(track)}
                       onRemove={(event) => {
                         focusAfterRemoval(event.currentTarget, '#selected-playlist-detail', '.track-row__remove', '#selected-playlist-title')
                         removeTrackFromPlaylist(selectedPlaylist.id, track)
@@ -1655,6 +2025,7 @@ function App() {
                         onPlaylist={() => openPlaylistDialog(track)}
                         onLyrics={() => void openLyrics(track)}
                         onDownload={() => void downloadTrack(track)}
+                        onCoverDownload={() => void downloadCover(track)}
                       />
                     ))}
                     {recommendationLoading && !playlistRecommendations.length && <div className="compact-empty"><LoaderCircle className="spin" /><span>正在分析歌单里的歌手和专辑</span></div>}
@@ -1679,6 +2050,7 @@ function App() {
                   onPlaylist={() => openPlaylistDialog(track)}
                   onLyrics={() => void openLyrics(track)}
                   onDownload={() => void downloadTrack(track)}
+                  onCoverDownload={() => void downloadCover(track)}
                 />
               ))}
               {!liked.size && <div className="empty-state"><Heart /><h3>收藏夹还是空的</h3><p>遇到喜欢的歌，就点一下心形按钮吧。</p></div>}
@@ -1748,7 +2120,7 @@ function App() {
           src={current.audioUrl || undefined}
           preload="none"
           playsInline
-          onPlay={(event) => { if (isCurrentAudio(event.currentTarget)) setIsPlaying(true) }}
+          onPlay={(event) => { if (isCurrentAudio(event.currentTarget)) { setIsPlaying(true); recordHistory(current) } }}
           onPlaying={(event) => { if (isCurrentAudio(event.currentTarget)) { cancelMediaRetry(); setIsBuffering(false) } }}
           onWaiting={(event) => { if (isCurrentAudio(event.currentTarget) && !event.currentTarget.paused) setIsBuffering(true) }}
           onStalled={(event) => { if (isCurrentAudio(event.currentTarget) && !event.currentTarget.paused) setIsBuffering(true) }}
@@ -1770,7 +2142,7 @@ function App() {
           <div className="player__controls"><button aria-label="随机播放" disabled={queue.length < 2} onClick={shuffle}><Shuffle /></button><button aria-label="上一首" disabled={!queue.length} onClick={() => skip(-1)}><SkipBack fill="currentColor" /></button><button className="play-main" aria-label={playerVisualState === 'resolving' ? '取消加载' : current.capabilities.playback === 'none' ? '当前歌曲无法播放' : playerVisualState === 'buffering' ? '暂停缓冲' : playerVisualState === 'playing' ? '暂停' : '播放'} aria-busy={playerLoading} disabled={playControlDisabled(current.capabilities.playback, Boolean(pendingTrackKey))} onClick={togglePlay}>{playerLoading ? <LoaderCircle className="spin" /> : playerVisualState === 'playing' ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button><button aria-label="下一首" disabled={!queue.length} onClick={() => skip(1)}><SkipForward fill="currentColor" /></button><button className={repeatMode === 'off' ? '' : 'active'} aria-label={`循环模式：${repeatMode === 'off' ? '关闭' : repeatMode === 'all' ? '列表循环' : '单曲循环'}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeat}>{repeatMode === 'one' ? <Repeat1 /> : <Repeat />}</button><button aria-label="播放队列" onClick={openQueue}><ListMusic /></button></div>
           <div className="player__progress"><span>{formatTime(seekProgress)}</span><input aria-label="播放进度" aria-valuetext={`${formatTime(seekProgress)} / ${formatTime(seekDuration)}`} disabled={!seekDuration} type="range" min="0" max={seekDuration || 1} step="0.1" value={seekProgress} style={{ '--progress': `${seekDuration ? (seekProgress / seekDuration) * 100 : 0}%` } as React.CSSProperties} onChange={(event) => seekTo(Number(event.target.value))} /><span>{formatTime(seekDuration)}</span></div>
         </div>
-        <div className="player__tools"><button aria-label={`将 ${current.title} 加入歌单`} onClick={() => openPlaylistDialog(current)}><ListPlus /></button><button className={current.capabilities.lyrics ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.lyrics} aria-label={current.capabilities.lyrics ? `查看 ${current.title} 的歌词` : `${current.title} 的歌词不可用`} onClick={() => void openLyrics(current)}><FileText /></button><button className={current.capabilities.download ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.download} aria-label={current.capabilities.download ? `下载 ${current.title}` : `${current.title} 不可下载`} onClick={() => void downloadTrack(current)}><Download /></button><button className="volume-button" aria-label={volume > 0 ? '静音' : '取消静音'} aria-pressed={volume === 0} onClick={toggleMute}>{volume > 0 ? <Volume2 /> : <VolumeX />}</button><input aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} type="range" min="0" max="1" step="0.01" value={volume} style={{ '--progress': `${volume * 100}%` } as React.CSSProperties} onChange={(event) => setVolume(Number(event.target.value))} /></div>
+        <div className="player__tools"><button aria-label={`将 ${current.title} 加入歌单`} onClick={() => openPlaylistDialog(current)}><ListPlus /></button><button className={current.capabilities.lyrics ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.lyrics} aria-label={current.capabilities.lyrics ? `查看 ${current.title} 的歌词` : `${current.title} 的歌词不可用`} onClick={() => void openLyrics(current)}><FileText /></button><button className={current.capabilities.download ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.download} aria-label={current.capabilities.download ? `下载 ${current.title}` : `${current.title} 不可下载`} onClick={() => void downloadTrack(current)}><Download /></button><button aria-label={`下载封面 ${current.title}`} title="下载封面" onClick={() => void downloadCover(current)}><ImageDown /></button><button className="volume-button" aria-label={volume > 0 ? '静音' : '取消静音'} aria-pressed={volume === 0} onClick={toggleMute}>{volume > 0 ? <Volume2 /> : <VolumeX />}</button><input aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} type="range" min="0" max="1" step="0.01" value={volume} style={{ '--progress': `${volume * 100}%` } as React.CSSProperties} onChange={(event) => setVolume(Number(event.target.value))} /></div>
       </footer>
       {notice && <div className="notice" role="status">{notice}</div>}
     </div>

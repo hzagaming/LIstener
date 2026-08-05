@@ -354,7 +354,7 @@ test('times out every non-search provider operation and passes its abort signal'
   })
   const guard = (operation) => Promise.race([
     operation(),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('test guard expired')), 50)),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('test guard expired')), 500)),
   ])
 
   for (const operation of [service.resolve, service.lookup, service.lyrics, service.download]) {

@@ -9,6 +9,9 @@ import { createNeteaseProvider } from './providers/netease.mjs'
 import { createLocalFixtureProvider } from './providers/localFixture.mjs'
 import { readMusicConfig } from './config.mjs'
 import { createStructuredLogger } from './logger.mjs'
+import { createAccountStore } from './accountStore.mjs'
+import { createArtworkDownloader } from './artwork.mjs'
+import { createAudioDownloader } from './audioDownload.mjs'
 
 const config = readMusicConfig()
 const logger = createStructuredLogger()
@@ -58,11 +61,23 @@ const service = createMusicService({
   providerTimeoutMs: config.providerTimeoutMs,
   maxConcurrentProviders: config.maxConcurrentProviders,
 })
+const accountStore = createAccountStore({ filename: config.databasePath })
+const artworkDownloader = createArtworkDownloader({ maxBytes: config.artworkMaxBytes })
+const audioDownloader = createAudioDownloader({
+  maxBytes: config.audioDownloadMaxBytes,
+  timeoutMs: config.audioDownloadTimeoutMs,
+})
 const server = createServer(createApiHandler({
   service,
   allowedOrigin: config.corsOrigin,
   rateLimit: config.apiRateLimit,
   logger,
+  accountStore,
+  artworkDownloader,
+  audioDownloader,
+  sessionTtlMs: config.sessionTtlMs,
+  secureCookies: config.secureCookies,
+  countryHeader: config.countryHeader,
 }))
 
 server.listen(config.port, config.host, () => {
@@ -73,6 +88,14 @@ server.listen(config.port, config.host, () => {
   })
 })
 
-const shutdown = () => server.close(() => process.exit(0))
+let shuttingDown = false
+const shutdown = () => {
+  if (shuttingDown) return
+  shuttingDown = true
+  server.close(() => {
+    accountStore.close()
+    process.exit(0)
+  })
+}
 process.once('SIGINT', shutdown)
 process.once('SIGTERM', shutdown)

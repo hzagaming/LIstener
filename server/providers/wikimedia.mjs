@@ -48,7 +48,7 @@ const normalizePage = (page) => {
     cover: 'gold',
     sourceUrl,
     quality: 'standard',
-    capabilities: { playback: 'full', lyrics: false, download: false },
+    capabilities: { playback: 'full', lyrics: false, download: true },
   }
 }
 
@@ -103,7 +103,7 @@ export const createWikimediaProvider = ({
     official: true,
     maxSearchResults: 10,
     allowedHosts: ['commons.wikimedia.org', 'upload.wikimedia.org'],
-    capabilities: { search: true, playback: true, lyrics: false, download: false },
+    capabilities: { search: true, playback: true, lyrics: false, download: true },
 
     async search(query, limit = 20, signal, page = 1) {
       const value = query.trim()
@@ -130,6 +130,12 @@ export const createWikimediaProvider = ({
 
     async resolve(id, signal) {
       return (await this.lookup(id, signal)).audioUrl
+    },
+
+    async download(id, signal) {
+      const track = await this.lookup(id, signal)
+      const extension = new URL(track.audioUrl).pathname.match(/\.[a-z0-9]{2,5}$/i)?.[0] || '.audio'
+      return { url: track.audioUrl, filename: `${track.title}${extension}` }
     },
   }
 }

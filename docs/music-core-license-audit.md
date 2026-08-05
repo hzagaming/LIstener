@@ -37,10 +37,11 @@
 | react | 18.3.1 | MIT |
 | react-dom | 18.3.1 | MIT |
 | lucide-react | 0.468.0 | ISC |
+| better-sqlite3 | 11.10.0 | MIT |
 | vite | 6.4.3 | MIT |
 | typescript | 5.7.2 | Apache-2.0 |
 | @vitejs/plugin-react | 4.3.4 | MIT |
 | @types/react | 18.3.18 | MIT |
 | @types/react-dom | 18.3.5 | MIT |
 
-本轮不新增运行时第三方依赖。Wikimedia Commons Provider 只调用官方 API 并链接原始媒体，每个文件仍受其来源页列出的独立许可和署名要求约束，不授予统一下载或再分发权。维护者在发布前仍需选择目标项目许可证，并确认演示音频及所有外部服务的内容条款；软件许可证不自动授予音乐内容的再分发权。
+本轮新增 `better-sqlite3` 11.10.0（MIT）用于账号与用户状态持久化；数据库运行时文件不进入发行产物。Wikimedia Commons Provider 只调用官方 API，并仅对结果明确指向的公开媒体提供受限流式下载；每个文件仍受其来源页列出的独立许可和署名要求约束，不授予统一再分发权。维护者在发布前仍需选择目标项目许可证，并确认演示音频及所有外部服务的内容条款；软件许可证不自动授予音乐内容的再分发权。

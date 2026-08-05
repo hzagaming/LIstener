@@ -1,8 +1,18 @@
 const defaults = {
   volume: 0.72,
   repeat: 'off',
+  shuffle: false,
   regionalRecommendations: true,
   region: '',
+  theme: 'system',
+  coverStyle: 'vinyl',
+  accent: 'orange',
+  density: 'comfortable',
+  reduceMotion: false,
+  fontScale: 'standard',
+  cornerStyle: 'soft',
+  playerLayout: 'docked',
+  backgroundTexture: 'paper',
 }
 
 const uniqueTracks = (items, isTrack, maximum) => {
@@ -38,10 +48,22 @@ export const normalizeLibraryData = (value, { isTrack, isPlaylist }) => {
     settings: {
       volume: Number.isFinite(volume) && volume >= 0 && volume <= 1 ? volume : defaults.volume,
       repeat: ['off', 'all', 'one'].includes(settings.repeat) ? settings.repeat : defaults.repeat,
+      shuffle: typeof settings.shuffle === 'boolean' ? settings.shuffle : defaults.shuffle,
       regionalRecommendations: typeof settings.regionalRecommendations === 'boolean'
         ? settings.regionalRecommendations
         : defaults.regionalRecommendations,
       region,
+      theme: ['system', 'paper', 'night'].includes(settings.theme) ? settings.theme : defaults.theme,
+      coverStyle: ['vinyl', 'cassette', 'minimal'].includes(settings.coverStyle) ? settings.coverStyle : defaults.coverStyle,
+      accent: ['orange', 'blue', 'green'].includes(settings.accent) ? settings.accent : defaults.accent,
+      density: ['comfortable', 'compact'].includes(settings.density) ? settings.density : defaults.density,
+      reduceMotion: typeof settings.reduceMotion === 'boolean' ? settings.reduceMotion : defaults.reduceMotion,
+      fontScale: ['small', 'standard', 'large'].includes(settings.fontScale) ? settings.fontScale : defaults.fontScale,
+      cornerStyle: ['square', 'soft', 'round'].includes(settings.cornerStyle) ? settings.cornerStyle : defaults.cornerStyle,
+      playerLayout: ['docked', 'floating'].includes(settings.playerLayout) ? settings.playerLayout : defaults.playerLayout,
+      backgroundTexture: ['none', 'paper', 'grid'].includes(settings.backgroundTexture)
+        ? settings.backgroundTexture
+        : defaults.backgroundTexture,
     },
   }
 }

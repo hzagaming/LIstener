@@ -1,21 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowRight, CircleUserRound, Cloud, CloudOff, Disc3, Download, ExternalLink, FileDown, FileText, Heart, Home, ImageDown, Library,
+  ArrowRight, CassetteTape, CircleUserRound, Cloud, CloudOff, Disc3, Download, ExternalLink, FileDown, FileText, Github, Heart, Home, ImageDown, Library,
   ListMusic, ListPlus, LoaderCircle, Menu, Pause, Play, Plus, Repeat, Repeat1,
-  Search, Shuffle, SkipBack, SkipForward, Sparkles, Trash2, Upload, MapPin,
+  Palette, Search, Settings, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Sparkles, Trash2, Upload, MapPin,
   Volume2, VolumeX, Waves, X,
 } from 'lucide-react'
 import { playlists, tracks as initialTracks } from './data/catalog'
 import { localFileStem, readLocalLyrics, selectLocalAudioFiles } from './localFiles.mjs'
 import {
-  autoplayMediaMatches, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
+  autoplayMediaMatches, collectionPlaybackPlan, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
   mediaErrorAction, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 import {
   mergeRecommendationPages, nextPlayableRecommendation, recommendationSeed, shouldPrefetchRecommendations,
 } from './recommendationLogic.mjs'
-import { filterTracksByPlayback, searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
+import { filterTracksByPlayback, refineSearchTracks, searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
 import { downloadArtwork, musicProvider, publicAppleMode, sourceLabel } from './services/musicProvider'
 import { accountApi, accountAvailable } from './services/account'
 import { mergeLibraryData, normalizeLibraryData } from './syncLogic.mjs'
@@ -23,14 +23,38 @@ import { isPlaylist, isTrack, musicSources, trackKey } from './types/music'
 import { isSafeUrl } from './urlPolicy.mjs'
 import type { AccountUser } from './services/account'
 import type { LibraryData, PlaybackHistory } from './syncLogic.mjs'
+import type { SearchDomain, SearchDuration, SearchSort } from './searchLogic.mjs'
 import type { MusicIdentification, MusicSource, Playlist, ProviderStatus, Track } from './types/music'
 
-type View = 'discover' | 'search' | 'library' | 'account'
+type View = 'discover' | 'search' | 'library' | 'account' | 'settings'
 type PlayMode = 'toggle' | 'play'
 type PlaybackFilter = 'no-preview' | 'full' | 'all'
+type CollectionPlaybackMode = 'order' | 'shuffle' | 'one'
+type Theme = 'system' | 'paper' | 'night'
+type CoverStyle = 'vinyl' | 'cassette' | 'minimal'
+type Accent = 'orange' | 'blue' | 'green'
+type Density = 'comfortable' | 'compact'
+type FontScale = 'small' | 'standard' | 'large'
+type CornerStyle = 'square' | 'soft' | 'round'
+type PlayerLayout = 'docked' | 'floating'
+type BackgroundTexture = 'none' | 'paper' | 'grid'
 type PlaylistRecommendation = { track: Track; reason: string }
 const identifiableSources: MusicSource[] = publicAppleMode ? ['apple'] : musicSources.filter((source) => !['demo', 'local', 'fixture'].includes(source))
 const libraryValidators = { isTrack, isPlaylist }
+const projectLinks = [
+  { label: 'GitHub 仓库', href: 'https://github.com/hzagaming/LIstener' },
+  { label: 'Issue 仓库', href: 'https://github.com/hzagaming/LIstener/issues' },
+  { label: 'Commit 记录', href: 'https://github.com/hzagaming/LIstener/commits/main' },
+  { label: 'GitHub Releases', href: 'https://github.com/hzagaming/LIstener/releases' },
+  { label: 'HZAGAMING 主页', href: 'https://github.com/hzagaming' },
+] as const
+const accentColors: Record<Accent, string> = { orange: '#ed6c3b', blue: '#477fc1', green: '#3f8a65' }
+const searchExplorations = [
+  { label: '流派', terms: [{ label: '流行', query: 'pop hits' }, { label: '摇滚', query: 'rock hits' }, { label: 'R&B', query: 'R&B' }, { label: '电子', query: 'electronic music' }, { label: '民谣', query: 'folk music' }] },
+  { label: '场景', terms: [{ label: '通勤', query: 'commute music' }, { label: '学习', query: 'focus music' }, { label: '健身', query: 'workout music' }, { label: '深夜', query: 'late night music' }, { label: '派对', query: 'party hits' }] },
+  { label: '年代', terms: [{ label: '80年代', query: '80s hits' }, { label: '90年代', query: '90s hits' }, { label: '00年代', query: '2000s hits' }, { label: '10年代', query: '2010s hits' }, { label: '20年代', query: '2020s hits' }] },
+  { label: '地区', terms: [{ label: '华语', query: '华语流行' }, { label: '欧美', query: 'US UK pop' }, { label: '日本', query: 'J-pop' }, { label: '韩国', query: 'K-pop' }, { label: '拉丁', query: 'Latin pop' }] },
+] as const
 
 const browserRegion = () => {
   const parts = navigator.language.split('-')
@@ -88,6 +112,11 @@ const readStoredText = (key: string, fallback: string) => {
   try { return localStorage.getItem(key) || fallback } catch { return fallback }
 }
 
+const readStoredChoice = <T extends string>(key: string, choices: readonly T[], fallback: T): T => {
+  const value = readStoredText(key, fallback)
+  return choices.includes(value as T) ? value as T : fallback
+}
+
 const readStoredHistory = () => {
   try {
     const value: unknown = JSON.parse(localStorage.getItem('listener.history') ?? '[]')
@@ -136,6 +165,7 @@ function Cover({ name, size = 'medium' }: { name: string; size?: 'small' | 'medi
     <div className={`cover ${imageUrl ? 'cover--remote' : `cover--${name}`} cover--${size}`} aria-hidden="true">
       <div className="cover__grain" />
       <Disc3 className="cover__disc" />
+      <div className="cover__cassette"><span /><span /></div>
       <span className="cover__mark">L.</span>
       {imageUrl && failedUrl !== imageUrl && <img className="cover__image" src={imageUrl} alt="" loading="lazy" decoding="async" onError={() => setFailedUrl(imageUrl)} />}
     </div>
@@ -230,6 +260,9 @@ function App() {
   const [searchRevision, setSearchRevision] = useState(0)
   const [sourceFilter, setSourceFilter] = useState<'all' | MusicSource>('all')
   const [playbackFilter, setPlaybackFilter] = useState<PlaybackFilter>(publicAppleMode ? 'all' : 'no-preview')
+  const [searchDomain, setSearchDomain] = useState<SearchDomain>('all')
+  const [searchDuration, setSearchDuration] = useState<SearchDuration>('all')
+  const [searchSort, setSearchSort] = useState<SearchSort>('relevance')
   const [queue, setQueue] = useState<Track[]>(() => playableTracks(readStoredTracks('listener.queue', initialTracks.slice(0, 6), true)))
   const [current, setCurrent] = useState<Track>(() => readStoredTrack('listener.current', initialTracks[0]))
   const [isPlaying, setIsPlaying] = useState(false)
@@ -248,6 +281,15 @@ function App() {
   const [history, setHistory] = useState<PlaybackHistory[]>(readStoredHistory)
   const [regionalRecommendations, setRegionalRecommendations] = useState(() => readStoredBoolean('listener.regional', true))
   const [region, setRegion] = useState(() => readStoredText('listener.region', browserRegion()).toUpperCase())
+  const [theme, setTheme] = useState<Theme>(() => readStoredChoice('listener.theme', ['system', 'paper', 'night'], 'system'))
+  const [coverStyle, setCoverStyle] = useState<CoverStyle>(() => readStoredChoice('listener.cover-style', ['vinyl', 'cassette', 'minimal'], 'vinyl'))
+  const [accent, setAccent] = useState<Accent>(() => readStoredChoice('listener.accent', ['orange', 'blue', 'green'], 'orange'))
+  const [density, setDensity] = useState<Density>(() => readStoredChoice('listener.density', ['comfortable', 'compact'], 'comfortable'))
+  const [reduceMotion, setReduceMotion] = useState(() => readStoredBoolean('listener.reduce-motion', false))
+  const [fontScale, setFontScale] = useState<FontScale>(() => readStoredChoice('listener.font-scale', ['small', 'standard', 'large'], 'standard'))
+  const [cornerStyle, setCornerStyle] = useState<CornerStyle>(() => readStoredChoice('listener.corner-style', ['square', 'soft', 'round'], 'soft'))
+  const [playerLayout, setPlayerLayout] = useState<PlayerLayout>(() => readStoredChoice('listener.player-layout', ['docked', 'floating'], 'docked'))
+  const [backgroundTexture, setBackgroundTexture] = useState<BackgroundTexture>(() => readStoredChoice('listener.background-texture', ['none', 'paper', 'grid'], 'paper'))
   const [online, setOnline] = useState(navigator.onLine)
   const [user, setUser] = useState<AccountUser | null>(null)
   const [accountChecking, setAccountChecking] = useState(accountAvailable)
@@ -279,6 +321,7 @@ function App() {
       return 'off'
     }
   })
+  const [shuffleMode, setShuffleMode] = useState(() => readStoredBoolean('listener.shuffle', false))
   const [identifySource, setIdentifySource] = useState<MusicSource>(publicAppleMode ? 'apple' : 'netease')
   const [identification, setIdentification] = useState<MusicIdentification | null>(null)
   const [identificationHasDetails, setIdentificationHasDetails] = useState<boolean | null>(null)
@@ -388,6 +431,13 @@ function App() {
     setQuery(value)
   }
 
+  const exploreSearch = (value: string) => {
+    setSearchDomain('all')
+    setSearchDuration('all')
+    setSearchSort('relevance')
+    updateQuery(value)
+  }
+
   const updateIdentifySource = (source: MusicSource) => {
     identifyControllerRef.current?.abort()
     identifyControllerRef.current = null
@@ -427,6 +477,30 @@ function App() {
   useEffect(() => {
     writeStorage('listener.repeat', repeatMode)
   }, [repeatMode])
+
+  useEffect(() => {
+    writeStorage('listener.shuffle', String(shuffleMode))
+  }, [shuffleMode])
+
+  useEffect(() => {
+    writeStorage('listener.theme', theme)
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const apply = () => { document.documentElement.dataset.theme = theme === 'system' ? media.matches ? 'night' : 'paper' : theme }
+    apply()
+    media.addEventListener('change', apply)
+    return () => media.removeEventListener('change', apply)
+  }, [theme])
+
+  useEffect(() => {
+    writeStorage('listener.cover-style', coverStyle)
+    writeStorage('listener.accent', accent)
+    writeStorage('listener.density', density)
+    writeStorage('listener.reduce-motion', String(reduceMotion))
+    writeStorage('listener.font-scale', fontScale)
+    writeStorage('listener.corner-style', cornerStyle)
+    writeStorage('listener.player-layout', playerLayout)
+    writeStorage('listener.background-texture', backgroundTexture)
+  }, [accent, backgroundTexture, cornerStyle, coverStyle, density, fontScale, playerLayout, reduceMotion])
 
   useEffect(() => {
     writeStorage('listener.history', history.map((item) => ({
@@ -626,11 +700,17 @@ function App() {
     () => sourceFilter === 'all' ? results : results.filter((track) => track.source === sourceFilter),
     [results, sourceFilter],
   )
-  const displayResults = useMemo(
-    () => filterTracksByPlayback(sourceResults, playbackFilter),
-    [sourceResults, playbackFilter],
+  const refinedResults = useMemo(
+    () => refineSearchTracks(sourceResults, {
+      query: resultQuery, domain: searchDomain, duration: searchDuration, sort: searchSort,
+    }),
+    [resultQuery, searchDomain, searchDuration, searchSort, sourceResults],
   )
-  const hiddenByPlayback = sourceResults.length - displayResults.length
+  const displayResults = useMemo(
+    () => filterTracksByPlayback(refinedResults, playbackFilter),
+    [refinedResults, playbackFilter],
+  )
+  const hiddenByFilters = sourceResults.length - displayResults.length
   const resultSources = useMemo(() => [...new Set(results.map((track) => track.source))], [results])
   const publicSearchFallback = searchDegraded && resultSources.includes('apple')
   const likedTracks = useMemo(() => [...liked.values()], [liked])
@@ -641,8 +721,12 @@ function App() {
     queue: prepareStoredTracks(queue),
     current: current.source === 'local' ? null : prepareStoredTrack(current),
     history: history.filter((item) => item.track.source !== 'local').map((item) => ({ ...item, track: prepareStoredTrack(item.track) })),
-    settings: { volume, repeat: repeatMode, regionalRecommendations, region },
-  }, libraryValidators), [current, history, likedTracks, queue, region, regionalRecommendations, repeatMode, userPlaylists, volume])
+    settings: {
+      volume, repeat: repeatMode, shuffle: shuffleMode, regionalRecommendations, region,
+      theme, coverStyle, accent, density, reduceMotion,
+      fontScale, cornerStyle, playerLayout, backgroundTexture,
+    },
+  }, libraryValidators), [accent, backgroundTexture, cornerStyle, coverStyle, current, density, fontScale, history, likedTracks, playerLayout, queue, reduceMotion, region, regionalRecommendations, repeatMode, shuffleMode, theme, userPlaylists, volume])
   const portableLibraryRef = useRef<LibraryData>(portableLibrary)
   portableLibraryRef.current = portableLibrary
 
@@ -654,8 +738,18 @@ function App() {
     setHistory(data.history)
     setVolume(data.settings.volume)
     setRepeatMode(data.settings.repeat)
+    setShuffleMode(data.settings.shuffle)
     setRegionalRecommendations(data.settings.regionalRecommendations)
     if (data.settings.region) setRegion(data.settings.region)
+    setTheme(data.settings.theme)
+    setCoverStyle(data.settings.coverStyle)
+    setAccent(data.settings.accent)
+    setDensity(data.settings.density)
+    setReduceMotion(data.settings.reduceMotion)
+    setFontScale(data.settings.fontScale)
+    setCornerStyle(data.settings.cornerStyle)
+    setPlayerLayout(data.settings.playerLayout)
+    setBackgroundTexture(data.settings.backgroundTexture)
   }
 
   const saveCloudState = async (snapshot = portableLibraryRef.current) => {
@@ -1082,15 +1176,19 @@ function App() {
       }
       return
     }
-    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + direction + queue.length) % queue.length
+    const nextIndex = shuffleMode && direction === 1 && queue.length > 1
+      ? (() => {
+          const candidates = queue.map((_, index) => index).filter((index) => index !== currentIndex)
+          return candidates[Math.floor(Math.random() * candidates.length)]
+        })()
+      : currentIndex < 0 ? 0 : (currentIndex + direction + queue.length) % queue.length
     void resolveAndPlay(queue[nextIndex], undefined, 'play', continuationPlaylistId)
   }
 
-  const shuffle = () => {
-    const candidates = queue.filter((track) => trackKey(track) !== currentKey)
-    if (!candidates.length) return showNotice('播放队列里还没有其他歌曲')
-    const track = candidates[Math.floor(Math.random() * candidates.length)]
-    void resolveAndPlay(track, undefined, 'play', continuousPlaylistId)
+  const updateShuffleMode = (enabled: boolean) => {
+    setShuffleMode(enabled)
+    if (enabled && repeatMode === 'off') setRepeatMode('all')
+    showNotice(enabled ? '随机播放已开启' : '随机播放已关闭')
   }
 
   const cycleRepeat = () => {
@@ -1149,9 +1247,16 @@ function App() {
     const recommended = continuous && selectedPlaylist?.id === playlist.id
       ? recommendationTracks.filter((track) => track.capabilities.playback === 'full')
       : []
-    const playable = playableTracks([...playlist.tracks, ...recommended])
-    if (playable[0]) void resolveAndPlay(playable[0], playable, 'play', continuous ? playlist.id : null)
-    else showNotice('歌单里没有可播放的歌曲')
+    playCollection([...playlist.tracks, ...recommended], 'order', continuous ? playlist.id : null)
+  }
+
+  const playCollection = (tracks: Track[], mode: CollectionPlaybackMode, continuationPlaylistId: string | null = null) => {
+    const plan = collectionPlaybackPlan(tracks, mode)
+    if (!plan.queue[0]) return showNotice('歌单里没有可播放的歌曲')
+    setShuffleMode(plan.shuffle)
+    setRepeatMode(plan.repeatMode)
+    void resolveAndPlay(plan.queue[0], plan.queue, 'play', continuationPlaylistId)
+    showNotice(mode === 'shuffle' ? '正在随机播放歌单' : mode === 'one' ? '已开启单曲循环' : '正在顺序播放歌单')
   }
 
   const rememberDialogTrigger = () => {
@@ -1661,7 +1766,16 @@ function App() {
       : playerVisualState === 'playing' ? '正在播放' : ''
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell app-shell--${density}`}
+      data-cover-style={coverStyle}
+      data-reduce-motion={reduceMotion ? 'true' : 'false'}
+      data-font-scale={fontScale}
+      data-corner-style={cornerStyle}
+      data-player-layout={playerLayout}
+      data-background-texture={backgroundTexture}
+      style={{ '--orange': accentColors[accent] } as React.CSSProperties}
+    >
       <div id="mobile-navigation" className={`sidebar ${mobileNavOpen ? 'sidebar--open' : ''}`} role={mobileNavOpen ? 'dialog' : 'complementary'} aria-modal={mobileNavOpen ? 'true' : undefined} aria-label="侧边导航" {...(queueOpen || dialogOpen ? { inert: '' } : {})}>
         <button ref={mobileCloseRef} className="sidebar__close icon-button" onClick={closeMobileNav} aria-label="关闭菜单"><X /></button>
         <button className="brand" onClick={() => navigate('discover')}>
@@ -1674,6 +1788,7 @@ function App() {
           <button aria-current={view === 'search' ? 'page' : undefined} className={view === 'search' ? 'active' : ''} onClick={() => navigate('search')}><Search />聚合搜索</button>
           <button aria-current={view === 'library' ? 'page' : undefined} className={view === 'library' ? 'active' : ''} onClick={() => navigateLibrarySection('liked')}><Library />我的收藏</button>
           <button aria-current={view === 'account' ? 'page' : undefined} className={view === 'account' ? 'active' : ''} onClick={() => navigate('account')}><CircleUserRound />账号与同步</button>
+          <button aria-current={view === 'settings' ? 'page' : undefined} className={view === 'settings' ? 'active' : ''} onClick={() => navigate('settings')}><Settings />设置</button>
         </nav>
 
         <div className="sidebar__section-label">我的音乐</div>
@@ -1795,6 +1910,16 @@ function App() {
               </div>
               <div className="search-hints"><span>试试：</span>{['周杰伦', 'Taylor Swift', '晴天'].map((word) => <button key={word} onClick={() => updateQuery(word)}>{word}</button>)}</div>
               {inputMode === 'too-long' && <div id="search-input-error" className="search-input-error" role="alert">搜索关键词最多 100 个字符；如果粘贴的是音乐地址，请保留完整的 http:// 或 https:// 前缀。</div>}
+              <div className="advanced-search" aria-label="高级搜索筛选">
+                <label>搜索字段<select value={searchDomain} onChange={(event) => setSearchDomain(event.target.value as SearchDomain)}><option value="all">全部字段</option><option value="title">歌曲名</option><option value="artist">歌手</option><option value="album">专辑</option></select></label>
+                <label>时长范围<select value={searchDuration} onChange={(event) => setSearchDuration(event.target.value as SearchDuration)}><option value="all">全部时长</option><option value="short">3 分钟内</option><option value="medium">3–5 分钟</option><option value="long">5 分钟以上</option></select></label>
+                <label>结果排序<select value={searchSort} onChange={(event) => setSearchSort(event.target.value as SearchSort)}><option value="relevance">相关度</option><option value="title">歌曲名</option><option value="artist">歌手</option><option value="duration">时长</option></select></label>
+                {(searchDomain !== 'all' || searchDuration !== 'all' || searchSort !== 'relevance') && <button onClick={() => { setSearchDomain('all'); setSearchDuration('all'); setSearchSort('relevance') }}>清除筛选</button>}
+              </div>
+              <details className="search-explore" open>
+                <summary>探索更多音乐领域</summary>
+                <div>{searchExplorations.map((group) => <div className="search-explore__group" key={group.label}><strong>{group.label}</strong><span>{group.terms.map((term) => <button key={term.label} title={`搜索 ${term.query}`} onClick={() => exploreSearch(term.query)}>{term.label}</button>)}</span></div>)}</div>
+              </details>
               <div className="id-resolver">
                 <select aria-label="音乐 ID 所属平台" value={identifySource} onChange={(event) => updateIdentifySource(event.target.value as MusicSource)}>
                   {identifiableSources.map((source) => <option key={source} value={source}>{sourceLabel(source)}</option>)}
@@ -1824,7 +1949,7 @@ function App() {
             </div>
             <section className="results-section">
               {searchDegraded && <div className="search-warning" role="alert"><Sparkles /><span><strong>{publicSearchFallback ? '聚合服务离线，已切换公共搜索' : '聚合服务异常，当前为演示结果'}</strong><small>{publicSearchFallback ? '当前由 Apple Music 公共接口提供结果。' : '真实音乐源暂时不可用，请稍后重试。'}</small></span><button onClick={() => setSearchRevision((value) => value + 1)}>重试</button></div>}
-              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索结果 ${displayResults.length} 首` : searchDegraded ? `演示结果 ${displayResults.length} 首` : `共 ${displayResults.length} 首${hiddenByPlayback ? ` · 已过滤 ${hiddenByPlayback} 首` : ''}`}</span></div>
+              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索结果 ${displayResults.length} 首` : searchDegraded ? `演示结果 ${displayResults.length} 首` : `共 ${displayResults.length} 首${hiddenByFilters ? ` · 已过滤 ${hiddenByFilters} 首` : ''}`}</span></div>
               <div className="track-list" role="list">
                 {displayResults.length ? displayResults.map((track, index) => (
                   <TrackRow
@@ -1843,7 +1968,7 @@ function App() {
                     onDownload={() => void downloadTrack(track)}
                     onCoverDownload={() => void downloadCover(track)}
                   />
-                )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : inputMode === 'too-long' ? '搜索词太长' : sourceResults.length ? '当前播放范围没有结果' : searchDegraded ? '聚合服务暂不可用' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : inputMode === 'too-long' ? '请缩短到 100 个字符以内，再重新搜索。' : sourceResults.length ? '可切换到“完整与元数据”或“包含试听”查看其他曲目。' : searchDegraded ? '备用音乐源也没有匹配结果，请点击重试。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
+                )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : inputMode === 'too-long' ? '搜索词太长' : sourceResults.length ? '当前筛选没有结果' : searchDegraded ? '聚合服务暂不可用' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : inputMode === 'too-long' ? '请缩短到 100 个字符以内，再重新搜索。' : sourceResults.length ? '可调整搜索字段、时长或播放范围，查看其他曲目。' : searchDegraded ? '备用音乐源也没有匹配结果，请点击重试。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
               </div>
             </section>
           </div>
@@ -1897,13 +2022,6 @@ function App() {
               </section>
 
               <section className="account-panel">
-                <div className="account-panel__header"><div><span className="eyebrow">PRIVATE REGION</span><h2>地区推荐</h2></div><MapPin /></div>
-                <p>后端只读取可信反向代理提供的两位国家代码，不记录原始 IP；你也可以手动选择或彻底关闭。</p>
-                <label className="setting-row"><span><strong>启用地区推荐</strong><small>仅影响主页流行搜索词</small></span><input type="checkbox" checked={regionalRecommendations} onChange={(event) => setRegionalRecommendations(event.target.checked)} /></label>
-                <label className="region-field" htmlFor="region-select">推荐地区<select id="region-select" value={region} onChange={(event) => setRegion(event.target.value)}><option value="CN">中国大陆</option><option value="US">美国</option><option value="GB">英国</option><option value="JP">日本</option><option value="KR">韩国</option><option value="FR">法国</option><option value="DE">德国</option></select></label>
-              </section>
-
-              <section className="account-panel">
                 <div className="account-panel__header"><div><span className="eyebrow">OFFLINE READY</span><h2>{online ? '离线应用已准备' : '当前处于离线模式'}</h2></div>{online ? <Cloud /> : <CloudOff />}</div>
                 <p>生产版本会缓存应用壳与同源构建资源，不缓存账号 API、第三方音频或私人云端数据；本地音乐只在当前页面会话保留。</p>
               </section>
@@ -1911,6 +2029,86 @@ function App() {
               <section className="account-panel">
                 <div className="account-panel__header"><div><span className="eyebrow">PLAY HISTORY</span><h2>最近播放</h2></div>{history.length > 0 && <button className="text-button danger" onClick={() => setHistory([])}>清空</button>}</div>
                 {history.length ? <ol className="history-list">{history.slice(0, 8).map((item) => <li key={`${trackKey(item.track)}:${item.playedAt}`}><span><strong>{item.track.title}</strong><small>{item.track.artist}</small></span><time dateTime={new Date(item.playedAt).toISOString()}>{new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(item.playedAt)}</time></li>)}</ol> : <p>播放真实歌曲后，记录会出现在这里。</p>}
+              </section>
+            </div>
+          </div>
+        )}
+
+        {view === 'settings' && (
+          <div className="page page--settings">
+            <div className="account-heading settings-heading">
+              <span className="eyebrow">PLAYBACK · APPEARANCE · SOURCES</span>
+              <h1>设置中心</h1>
+              <p>播放偏好与外观会保存在当前设备，登录后也会跟随账号同步。</p>
+            </div>
+
+            <div className="settings-grid">
+              <section className="account-panel settings-panel">
+                <div className="account-panel__header"><div><span className="eyebrow">APPEARANCE</span><h2>样式与封面</h2></div><Palette /></div>
+                <label className="settings-field">主题
+                  <select value={theme} onChange={(event) => setTheme(event.target.value as Theme)}>
+                    <option value="system">跟随系统</option><option value="paper">暖纸日间</option><option value="night">深夜模式</option>
+                  </select>
+                </label>
+                <fieldset className="choice-fieldset"><legend>歌曲封面样式</legend><div className="choice-buttons">
+                  <button aria-pressed={coverStyle === 'vinyl'} className={coverStyle === 'vinyl' ? 'active' : ''} onClick={() => setCoverStyle('vinyl')}><Disc3 />黑胶</button>
+                  <button aria-pressed={coverStyle === 'cassette'} className={coverStyle === 'cassette' ? 'active' : ''} onClick={() => setCoverStyle('cassette')}><CassetteTape />磁带</button>
+                  <button aria-pressed={coverStyle === 'minimal'} className={coverStyle === 'minimal' ? 'active' : ''} onClick={() => setCoverStyle('minimal')}><ImageDown />纯封面</button>
+                </div></fieldset>
+                <fieldset className="choice-fieldset"><legend>强调色</legend><div className="accent-choices">
+                  {(['orange', 'blue', 'green'] as Accent[]).map((color) => <button key={color} aria-label={`${color === 'orange' ? '橙色' : color === 'blue' ? '蓝色' : '绿色'}强调色`} aria-pressed={accent === color} className={accent === color ? 'active' : ''} style={{ '--swatch': accentColors[color] } as React.CSSProperties} onClick={() => setAccent(color)} />)}
+                </div></fieldset>
+                <label className="setting-row"><span><strong>紧凑列表</strong><small>在一屏展示更多歌曲</small></span><input type="checkbox" checked={density === 'compact'} onChange={(event) => setDensity(event.target.checked ? 'compact' : 'comfortable')} /></label>
+                <label className="setting-row"><span><strong>减少动效</strong><small>关闭旋转、过渡和页面入场动画</small></span><input type="checkbox" checked={reduceMotion} onChange={(event) => setReduceMotion(event.target.checked)} /></label>
+              </section>
+
+              <section className="account-panel settings-panel">
+                <div className="account-panel__header"><div><span className="eyebrow">LAYOUT</span><h2>界面布局</h2></div><SlidersHorizontal /></div>
+                <label className="settings-field">界面字号<select value={fontScale} onChange={(event) => setFontScale(event.target.value as FontScale)}><option value="small">精简</option><option value="standard">标准</option><option value="large">大号</option></select></label>
+                <label className="settings-field">圆角风格<select value={cornerStyle} onChange={(event) => setCornerStyle(event.target.value as CornerStyle)}><option value="square">直角</option><option value="soft">轻圆角</option><option value="round">大圆角</option></select></label>
+                <label className="settings-field">播放器布局<select value={playerLayout} onChange={(event) => setPlayerLayout(event.target.value as PlayerLayout)}><option value="docked">贴底通栏</option><option value="floating">桌面悬浮</option></select></label>
+                <label className="settings-field">背景纹理<select value={backgroundTexture} onChange={(event) => setBackgroundTexture(event.target.value as BackgroundTexture)}><option value="none">纯色</option><option value="paper">纸张颗粒</option><option value="grid">唱片网格</option></select></label>
+                <p className="settings-note">悬浮播放器仅在桌面宽度启用，手机端自动保持贴底，避免遮挡歌曲操作。</p>
+              </section>
+
+              <section className="account-panel settings-panel">
+                <div className="account-panel__header"><div><span className="eyebrow">PLAYBACK</span><h2>播放参数</h2></div><SlidersHorizontal /></div>
+                <label className="settings-field">默认循环模式
+                  <select value={repeatMode} onChange={(event) => setRepeatMode(event.target.value as 'off' | 'all' | 'one')}>
+                    <option value="off">顺序播放</option><option value="all">列表循环</option><option value="one">单曲循环</option>
+                  </select>
+                </label>
+                <label className="setting-row"><span><strong>随机播放</strong><small>下一首从当前队列随机选择</small></span><input type="checkbox" checked={shuffleMode} onChange={(event) => updateShuffleMode(event.target.checked)} /></label>
+                <label className="volume-setting">音量 <strong>{Math.round(volume * 100)}%</strong><input aria-label="设置页音量" type="range" min="0" max="1" step="0.01" value={volume} style={{ '--progress': `${volume * 100}%` } as React.CSSProperties} onChange={(event) => setVolume(Number(event.target.value))} /></label>
+                <p className="settings-note">喜欢的音乐和自建歌单均可单独选择顺序、随机或单曲循环；底部播放器可随时覆盖当前模式。</p>
+              </section>
+
+              <section className="account-panel settings-panel">
+                <div className="account-panel__header"><div><span className="eyebrow">PRIVATE REGION</span><h2>地区与隐私</h2></div><MapPin /></div>
+                <p>后端只读取可信反向代理提供的两位国家代码，不记录原始 IP。</p>
+                <label className="setting-row"><span><strong>启用地区推荐</strong><small>仅影响主页流行搜索词</small></span><input type="checkbox" checked={regionalRecommendations} onChange={(event) => setRegionalRecommendations(event.target.checked)} /></label>
+                <label className="settings-field" htmlFor="region-select">推荐地区<select id="region-select" value={region} onChange={(event) => setRegion(event.target.value)}><option value="CN">中国大陆</option><option value="US">美国</option><option value="GB">英国</option><option value="JP">日本</option><option value="KR">韩国</option><option value="FR">法国</option><option value="DE">德国</option></select></label>
+              </section>
+
+              <section className="account-panel settings-panel settings-panel--sources">
+                <div className="account-panel__header"><div><span className="eyebrow">SOURCE CAPABILITIES</span><h2>音乐源能力</h2></div><Sparkles /></div>
+                <p>只展示当前部署真实返回的能力；“可解析”只代表能够识别地址或 ID，不代表获得搜索、播放或下载授权。</p>
+                <div className="provider-settings-list">
+                  {providerStatus.sources.map((source) => {
+                    const capabilities = providerStatus.capabilities[source]
+                    return <div className="provider-setting" key={source}><SourceBadge track={{ ...initialTracks[0], source }} /><span>{capabilities?.search ? '搜索' : '不可搜索'} · {capabilities?.playback ? '播放' : '仅元数据'} · {capabilities?.lyrics ? '歌词' : '无歌词'} · {capabilities?.download ? '授权下载' : '不可下载'}</span></div>
+                  })}
+                </div>
+                <div className="parseable-sources"><strong>当前可解析平台</strong><span>{identifiableSources.map(sourceLabel).join(' · ')}</span></div>
+                <p className="settings-note">Audius 需部署者配置服务端 API Key；会员、DRM、签名、地区限制和未授权下载不会被绕过。</p>
+              </section>
+
+              <section className="account-panel settings-panel settings-panel--project">
+                <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
+                <p>Listener 0.6.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <div className="project-links">
+                  {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
+                </div>
               </section>
             </div>
           </div>
@@ -2037,7 +2235,14 @@ function App() {
             </>)}
 
             <section className="library-section">
-              <div className="section-heading"><div><span className="section-index">02</span><h2 ref={likedHeadingRef} tabIndex={-1}>喜欢的音乐</h2></div></div>
+              <div className="section-heading">
+                <div><span className="section-index">02</span><h2 ref={likedHeadingRef} tabIndex={-1}>喜欢的音乐</h2></div>
+                <div className="section-actions collection-actions" role="group" aria-label="喜欢的音乐播放模式">
+                  <button disabled={!liked.size} onClick={() => playCollection(likedTracks, 'order')}><Play />顺序播放</button>
+                  <button disabled={!liked.size} onClick={() => playCollection(likedTracks, 'shuffle')}><Shuffle />随机播放</button>
+                  <button disabled={!liked.size} onClick={() => playCollection(likedTracks, 'one')}><Repeat1 />单曲循环</button>
+                </div>
+              </div>
             <div className="track-list" role="list">
               {likedTracks.map((track, index) => (
                 <TrackRow
@@ -2139,7 +2344,7 @@ function App() {
         />
         <div className="player__track"><Cover name={current.cover} size="small" /><div><strong>{current.title}</strong><span><b className="player__state" aria-live="polite">{playerStateLabel}{playerStateLabel ? ' · ' : ''}</b>{current.artist} · {sourceLabel(current.source)} · {qualityLabels[current.quality]}{current.capabilities.playback === 'preview' ? ' · 试听' : current.capabilities.playback === 'none' ? ' · 不可播放' : ''}</span></div><button aria-label={`${liked.has(currentKey) ? '取消收藏' : '收藏'} ${current.title}`} className={`like-button ${liked.has(currentKey) ? 'liked' : ''}`} onClick={() => toggleLike(current)}><Heart fill={liked.has(currentKey) ? 'currentColor' : 'none'} /></button></div>
         <div className="player__center">
-          <div className="player__controls"><button aria-label="随机播放" disabled={queue.length < 2} onClick={shuffle}><Shuffle /></button><button aria-label="上一首" disabled={!queue.length} onClick={() => skip(-1)}><SkipBack fill="currentColor" /></button><button className="play-main" aria-label={playerVisualState === 'resolving' ? '取消加载' : current.capabilities.playback === 'none' ? '当前歌曲无法播放' : playerVisualState === 'buffering' ? '暂停缓冲' : playerVisualState === 'playing' ? '暂停' : '播放'} aria-busy={playerLoading} disabled={playControlDisabled(current.capabilities.playback, Boolean(pendingTrackKey))} onClick={togglePlay}>{playerLoading ? <LoaderCircle className="spin" /> : playerVisualState === 'playing' ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button><button aria-label="下一首" disabled={!queue.length} onClick={() => skip(1)}><SkipForward fill="currentColor" /></button><button className={repeatMode === 'off' ? '' : 'active'} aria-label={`循环模式：${repeatMode === 'off' ? '关闭' : repeatMode === 'all' ? '列表循环' : '单曲循环'}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeat}>{repeatMode === 'one' ? <Repeat1 /> : <Repeat />}</button><button aria-label="播放队列" onClick={openQueue}><ListMusic /></button></div>
+              <div className="player__controls"><button className={shuffleMode ? 'active' : ''} aria-label={`随机播放：${shuffleMode ? '开启' : '关闭'}`} aria-pressed={shuffleMode} disabled={queue.length < 2} onClick={() => updateShuffleMode(!shuffleMode)}><Shuffle /></button><button aria-label="上一首" disabled={!queue.length} onClick={() => skip(-1)}><SkipBack fill="currentColor" /></button><button className="play-main" aria-label={playerVisualState === 'resolving' ? '取消加载' : current.capabilities.playback === 'none' ? '当前歌曲无法播放' : playerVisualState === 'buffering' ? '暂停缓冲' : playerVisualState === 'playing' ? '暂停' : '播放'} aria-busy={playerLoading} disabled={playControlDisabled(current.capabilities.playback, Boolean(pendingTrackKey))} onClick={togglePlay}>{playerLoading ? <LoaderCircle className="spin" /> : playerVisualState === 'playing' ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button><button aria-label="下一首" disabled={!queue.length} onClick={() => skip(1)}><SkipForward fill="currentColor" /></button><button className={repeatMode === 'off' ? '' : 'active'} aria-label={`循环模式：${repeatMode === 'off' ? '关闭' : repeatMode === 'all' ? '列表循环' : '单曲循环'}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeat}>{repeatMode === 'one' ? <Repeat1 /> : <Repeat />}</button><button aria-label="播放队列" onClick={openQueue}><ListMusic /></button></div>
           <div className="player__progress"><span>{formatTime(seekProgress)}</span><input aria-label="播放进度" aria-valuetext={`${formatTime(seekProgress)} / ${formatTime(seekDuration)}`} disabled={!seekDuration} type="range" min="0" max={seekDuration || 1} step="0.1" value={seekProgress} style={{ '--progress': `${seekDuration ? (seekProgress / seekDuration) * 100 : 0}%` } as React.CSSProperties} onChange={(event) => seekTo(Number(event.target.value))} /><span>{formatTime(seekDuration)}</span></div>
         </div>
         <div className="player__tools"><button aria-label={`将 ${current.title} 加入歌单`} onClick={() => openPlaylistDialog(current)}><ListPlus /></button><button className={current.capabilities.lyrics ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.lyrics} aria-label={current.capabilities.lyrics ? `查看 ${current.title} 的歌词` : `${current.title} 的歌词不可用`} onClick={() => void openLyrics(current)}><FileText /></button><button className={current.capabilities.download ? '' : 'is-unavailable'} aria-disabled={!current.capabilities.download} aria-label={current.capabilities.download ? `下载 ${current.title}` : `${current.title} 不可下载`} onClick={() => void downloadTrack(current)}><Download /></button><button aria-label={`下载封面 ${current.title}`} title="下载封面" onClick={() => void downloadCover(current)}><ImageDown /></button><button className="volume-button" aria-label={volume > 0 ? '静音' : '取消静音'} aria-pressed={volume === 0} onClick={toggleMute}>{volume > 0 ? <Volume2 /> : <VolumeX />}</button><input aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} type="range" min="0" max="1" step="0.01" value={volume} style={{ '--progress': `${volume * 100}%` } as React.CSSProperties} onChange={(event) => setVolume(Number(event.target.value))} /></div>

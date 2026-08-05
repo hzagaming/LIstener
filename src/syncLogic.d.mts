@@ -11,8 +11,18 @@ export type LibraryData = {
   settings: {
     volume: number
     repeat: 'off' | 'all' | 'one'
+    shuffle: boolean
     regionalRecommendations: boolean
     region: string
+    theme: 'system' | 'paper' | 'night'
+    coverStyle: 'vinyl' | 'cassette' | 'minimal'
+    accent: 'orange' | 'blue' | 'green'
+    density: 'comfortable' | 'compact'
+    reduceMotion: boolean
+    fontScale: 'small' | 'standard' | 'large'
+    cornerStyle: 'square' | 'soft' | 'round'
+    playerLayout: 'docked' | 'floating'
+    backgroundTexture: 'none' | 'paper' | 'grid'
   }
 }
 export type LibraryValidators = {

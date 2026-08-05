@@ -86,12 +86,32 @@ export const normalizeUserState = (value) => {
   if (!settings || typeof settings !== 'object') throw new Error('invalid user state')
   const volume = settings.volume ?? 0.72
   const repeat = settings.repeat ?? 'off'
+  const shuffle = settings.shuffle ?? false
   const regionalRecommendations = settings.regionalRecommendations ?? true
   const region = String(settings.region ?? '').toUpperCase()
+  const theme = settings.theme ?? 'system'
+  const coverStyle = settings.coverStyle ?? 'vinyl'
+  const accent = settings.accent ?? 'orange'
+  const density = settings.density ?? 'comfortable'
+  const reduceMotion = settings.reduceMotion ?? false
+  const fontScale = settings.fontScale ?? 'standard'
+  const cornerStyle = settings.cornerStyle ?? 'soft'
+  const playerLayout = settings.playerLayout ?? 'docked'
+  const backgroundTexture = settings.backgroundTexture ?? 'paper'
   if (!Number.isFinite(volume) || volume < 0 || volume > 1
     || !['off', 'all', 'one'].includes(repeat)
+    || typeof shuffle !== 'boolean'
     || typeof regionalRecommendations !== 'boolean'
-    || (region && !/^[A-Z]{2}$/.test(region))) {
+    || (region && !/^[A-Z]{2}$/.test(region))
+    || !['system', 'paper', 'night'].includes(theme)
+    || !['vinyl', 'cassette', 'minimal'].includes(coverStyle)
+    || !['orange', 'blue', 'green'].includes(accent)
+    || !['comfortable', 'compact'].includes(density)
+    || typeof reduceMotion !== 'boolean'
+    || !['small', 'standard', 'large'].includes(fontScale)
+    || !['square', 'soft', 'round'].includes(cornerStyle)
+    || !['docked', 'floating'].includes(playerLayout)
+    || !['none', 'paper', 'grid'].includes(backgroundTexture)) {
     throw new Error('invalid user state')
   }
 
@@ -111,6 +131,10 @@ export const normalizeUserState = (value) => {
     queue: collection(value.queue, 500, validTrack, cloneTrack),
     current: current ? cloneTrack(current) : null,
     history,
-    settings: { volume, repeat, regionalRecommendations, region },
+    settings: {
+      volume, repeat, shuffle, regionalRecommendations, region,
+      theme, coverStyle, accent, density, reduceMotion,
+      fontScale, cornerStyle, playerLayout, backgroundTexture,
+    },
   }
 }

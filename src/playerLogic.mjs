@@ -1,5 +1,23 @@
 export const playableTracks = (tracks) => tracks.filter((track) => track.capabilities.playback !== 'none')
 
+const shuffleTracks = (tracks, random) => {
+  const shuffled = [...tracks]
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const target = Math.floor(Math.min(0.999999999, Math.max(0, random())) * (index + 1))
+    ;[shuffled[index], shuffled[target]] = [shuffled[target], shuffled[index]]
+  }
+  return shuffled
+}
+
+export const collectionPlaybackPlan = (tracks, mode, random = Math.random) => {
+  const playable = playableTracks(tracks)
+  return {
+    queue: mode === 'shuffle' ? shuffleTracks(playable, random) : playable,
+    repeatMode: mode === 'one' ? 'one' : mode === 'shuffle' ? 'all' : 'off',
+    shuffle: mode === 'shuffle',
+  }
+}
+
 export const preferResolvedCurrent = (requested, current) => (
   requested.source === current.source && requested.id === current.id && current.audioUrl
     ? current

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  createSearchFallbackError, filterTracksByPlayback, parseSearchPage,
+  createSearchFallbackError, filterTracksByPlayback, parseSearchPage, refineSearchTracks,
   searchFallbackTracks, searchInputMode,
 } from './searchLogic.mjs'
 
@@ -38,6 +38,42 @@ test('hides previews by default while preserving full tracks and metadata', () =
   assert.deepEqual(filterTracksByPlayback(tracks, 'full').map(({ id }) => id), ['full'])
   assert.equal(filterTracksByPlayback(tracks, 'all'), tracks)
   assert.deepEqual(filterTracksByPlayback(null, 'all'), [])
+})
+
+test('filters search results by metadata field and duration without mutating relevance order', () => {
+  const tracks = [
+    { id: '1', title: 'Style', artist: 'Taylor Swift', album: 'Lover', duration: 221 },
+    { id: '2', title: 'Lover', artist: 'Jay Chou', album: 'Greatest Hits', duration: 175 },
+    { id: '3', title: 'Long Live', artist: 'Taylor Swift', album: 'Speak Now', duration: 315 },
+    { id: '4', title: 'Unknown', artist: 'Taylor Swift', album: 'Archive', duration: 0 },
+  ]
+
+  assert.deepEqual(refineSearchTracks(tracks, {
+    query: 'lover', domain: 'title', duration: 'all', sort: 'relevance',
+  }).map(({ id }) => id), ['2'])
+  assert.deepEqual(refineSearchTracks(tracks, {
+    query: 'taylor', domain: 'artist', duration: 'medium', sort: 'relevance',
+  }).map(({ id }) => id), ['1'])
+  assert.deepEqual(refineSearchTracks(tracks, {
+    query: 'speak', domain: 'album', duration: 'long', sort: 'relevance',
+  }).map(({ id }) => id), ['3'])
+  assert.deepEqual(refineSearchTracks(tracks, {
+    query: 'ignored', domain: 'all', duration: 'short', sort: 'relevance',
+  }).map(({ id }) => id), ['2'])
+  assert.deepEqual(tracks.map(({ id }) => id), ['1', '2', '3', '4'])
+})
+
+test('sorts advanced search results predictably and keeps unknown durations last', () => {
+  const tracks = [
+    { id: '1', title: 'Beta', artist: 'Zulu', album: '', duration: 0 },
+    { id: '2', title: 'Alpha', artist: 'Mike', album: '', duration: 240 },
+    { id: '3', title: 'Gamma', artist: 'Able', album: '', duration: 180 },
+  ]
+
+  assert.deepEqual(refineSearchTracks(tracks, { query: '', domain: 'all', duration: 'all', sort: 'title' }).map(({ id }) => id), ['2', '1', '3'])
+  assert.deepEqual(refineSearchTracks(tracks, { query: '', domain: 'all', duration: 'all', sort: 'artist' }).map(({ id }) => id), ['3', '2', '1'])
+  assert.deepEqual(refineSearchTracks(tracks, { query: '', domain: 'all', duration: 'all', sort: 'duration' }).map(({ id }) => id), ['3', '2', '1'])
+  assert.deepEqual(refineSearchTracks(null, { query: '', domain: 'all', duration: 'all', sort: 'title' }), [])
 })
 
 test('validates the versioned paginated search envelope', () => {

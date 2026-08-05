@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  autoplayMediaMatches, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
+  autoplayMediaMatches, collectionPlaybackPlan, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
   mediaErrorAction, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
@@ -26,6 +26,25 @@ test('keeps only playable tracks in their original order', () => {
   const tracks = [track('1'), track('2', 'none'), track('3', 'preview')]
 
   assert.deepEqual(playableTracks(tracks).map(({ id }) => id), ['1', '3'])
+})
+
+test('builds ordered, shuffled, and single-repeat collection playback plans', () => {
+  const tracks = [track('1'), track('2', 'none'), track('3'), track('4')]
+  const ordered = collectionPlaybackPlan(tracks, 'order')
+  const shuffled = collectionPlaybackPlan(tracks, 'shuffle', () => 0)
+  const single = collectionPlaybackPlan(tracks, 'one')
+
+  assert.deepEqual(ordered, {
+    queue: [tracks[0], tracks[2], tracks[3]],
+    repeatMode: 'off',
+    shuffle: false,
+  })
+  assert.deepEqual(shuffled.queue.map(({ id }) => id), ['3', '4', '1'])
+  assert.equal(shuffled.repeatMode, 'all')
+  assert.equal(shuffled.shuffle, true)
+  assert.equal(single.repeatMode, 'one')
+  assert.equal(single.shuffle, false)
+  assert.deepEqual(tracks.map(({ id }) => id), ['1', '2', '3', '4'])
 })
 
 test('does not let an old ended event replace a pending user selection', () => {

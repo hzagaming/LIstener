@@ -45,7 +45,7 @@ test('searches recordings with an identified and bounded request', async () => {
   assert.equal(request.url.searchParams.get('limit'), '50')
   assert.equal(request.url.searchParams.get('fmt'), 'json')
   assert.equal(request.options.headers.Accept, 'application/json')
-  assert.match(request.options.headers['User-Agent'], /^Listener\/0\.5\.0 \(ops@example\.com\)$/)
+  assert.match(request.options.headers['User-Agent'], /^Listener\/0\.6\.0 \(ops@example\.com\)$/)
   assert.equal(request.options.redirect, 'manual')
   assert.equal(provider.capabilities.playback, false)
 })

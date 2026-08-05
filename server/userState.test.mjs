@@ -24,7 +24,11 @@ test('normalizes bounded portable user state', () => {
     queue: [track()],
     current: track(),
     history: [{ track: track(), playedAt: 1_700_000_000_000 }],
-    settings: { volume: 0.5, repeat: 'all', regionalRecommendations: false, region: 'cn' },
+    settings: {
+      volume: 0.5, repeat: 'all', shuffle: true, regionalRecommendations: false, region: 'cn',
+      theme: 'night', coverStyle: 'cassette', accent: 'blue', density: 'compact', reduceMotion: true,
+      fontScale: 'large', cornerStyle: 'round', playerLayout: 'floating', backgroundTexture: 'grid',
+    },
   })
 
   assert.equal(state.version, 1)
@@ -33,8 +37,18 @@ test('normalizes bounded portable user state', () => {
   assert.deepEqual(state.settings, {
     volume: 0.5,
     repeat: 'all',
+    shuffle: true,
     regionalRecommendations: false,
     region: 'CN',
+    theme: 'night',
+    coverStyle: 'cassette',
+    accent: 'blue',
+    density: 'compact',
+    reduceMotion: true,
+    fontScale: 'large',
+    cornerStyle: 'round',
+    playerLayout: 'floating',
+    backgroundTexture: 'grid',
   })
 })
 
@@ -42,5 +56,10 @@ test('rejects unsafe, oversized, and malformed portable state', () => {
   assert.throws(() => normalizeUserState({ liked: [{ ...track(), sourceUrl: 'file:///tmp/song' }] }), /invalid user state/)
   assert.throws(() => normalizeUserState({ liked: Array.from({ length: 1001 }, (_, id) => track(String(id))) }), /invalid user state/)
   assert.throws(() => normalizeUserState({ settings: { volume: 2 } }), /invalid user state/)
+  assert.throws(() => normalizeUserState({ settings: { theme: 'neon' } }), /invalid user state/)
+  assert.throws(() => normalizeUserState({ settings: { fontScale: 'giant' } }), /invalid user state/)
+  assert.throws(() => normalizeUserState({ settings: { cornerStyle: 'blob' } }), /invalid user state/)
+  assert.throws(() => normalizeUserState({ settings: { playerLayout: 'sidebar' } }), /invalid user state/)
+  assert.throws(() => normalizeUserState({ settings: { backgroundTexture: 'video' } }), /invalid user state/)
   assert.throws(() => normalizeUserState({ extra: 'x'.repeat(1_100_000) }), /too large/)
 })

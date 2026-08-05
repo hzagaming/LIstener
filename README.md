@@ -2,7 +2,7 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、相似推荐、本地音乐、播放队列、账号同步、离线应用壳和按来源授权的歌词与下载能力。
 
-当前版本：`0.5.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.6.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
@@ -40,6 +40,8 @@ Node 服务首次启动会自动创建 `data/listener.sqlite`，该目录已忽�
 页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和授权试听，通过 `server/providers/musicbrainz.mjs` 补充 CC0 录音元数据，通过 `server/providers/wikimedia.mjs` 搜索 Wikimedia Commons 开放音频，并通过 `server/providers/netease.mjs` 补充网易云公开目录元数据和 ID 详情；没有合法播放地址的元数据会保留并明确标记为不可播放。Audius 配置 Key 后可提供创作者公开音频。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
 
 Node 聚合模式默认使用“完整与元数据”播放范围：隐藏 Apple 试听结果，保留 Wikimedia/Audius 完整音频和网易云/MusicBrainz 目录元数据；可切换为“仅完整可播”或“包含试听”。GitHub Pages 只有浏览器可直连的 Apple 公共接口，因此默认保留试听结果。
+
+搜索结果可继续按歌曲名、歌手或专辑字段过滤，限制为 3 分钟内、3–5 分钟或 5 分钟以上，并按相关度、歌曲名、歌手或时长排序。流派、场景、年代和地区入口会提交可见的普通搜索词，结果仍全部来自真实 Provider，不在浏览器内生成歌曲。
 
 打开自建歌单后会根据主要歌手或专辑自动展示最多 8 首真实相似结果；“显示更多/加载更多”和连续播放会继续请求 Provider 分页。推荐不写入本地存储，不使用演示或 Fixture 歌曲，并排除试听；连续队列只自动追加 Provider 明确授权为完整播放的音源，没有合法完整音源时只保留元数据说明或循环已有可播放队列。
 
@@ -107,7 +109,7 @@ ENABLE_NETEASE=false npm run server
 ## 账号、设备迁移与离线
 
 - 邮箱密码账号只在 Node 部署中可用；密码使用 `scrypt` 加盐哈希，会话 Cookie 为 HttpOnly、SameSite=Lax，数据库只保存会话 Token 哈希。
-- 收藏、歌单、队列、当前歌曲、播放记录、音量、循环与地区偏好使用修订号同步；冲突会合并，首次登录优先恢复云端播放状态和偏好。
+- 收藏、歌单、队列、当前歌曲、播放记录、播放参数、主题、字号、圆角、纹理、封面和播放器布局使用修订号同步；冲突会合并，首次登录优先恢复云端播放状态和偏好。
 - 无账号时仍可导出/导入不含密码、Cookie、本地音频和临时播放地址的 JSON 记录。
 - Service Worker 只缓存应用壳与同源构建资源，不缓存 API、第三方音频或私人云端数据。
 - 地区推荐只读取显式配置的可信国家代码 Header，不保存原始 IP；用户可手动选择地区或关闭推荐。

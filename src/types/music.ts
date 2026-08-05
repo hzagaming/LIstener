@@ -47,10 +47,23 @@ export interface Playlist {
   tracks: Track[]
 }
 
+export interface MusicSearchPageOptions {
+  provider?: MusicSource | 'all'
+  page?: number
+  pageSize?: number
+}
+
+export interface MusicSearchPage {
+  tracks: Track[]
+  page: number
+  hasMore: boolean
+}
+
 export interface MusicProvider {
   id: MusicSource
   name: string
   search(query: string, signal?: AbortSignal): Promise<Track[]>
+  searchPage(query: string, options?: MusicSearchPageOptions, signal?: AbortSignal): Promise<MusicSearchPage>
   resolve(track: Track, signal?: AbortSignal): Promise<string>
   identify(input: string, source?: MusicSource, signal?: AbortSignal): Promise<MusicIdentification | null>
   lookup(match: MusicIdentification, signal?: AbortSignal): Promise<Track>

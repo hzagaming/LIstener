@@ -23,3 +23,10 @@ export const filterTracksByPlayback = (tracks, mode) => {
     ? track?.capabilities?.playback === 'full'
     : track?.capabilities?.playback !== 'preview')
 }
+
+export const parseSearchPage = (payload, isItem) => {
+  const data = payload?.success === true ? payload.data : null
+  if (!data || !Number.isInteger(data.page) || data.page < 1 || typeof data.has_more !== 'boolean') return null
+  if (!Array.isArray(data.items) || typeof isItem !== 'function' || !data.items.every(isItem)) return null
+  return { tracks: data.items, page: data.page, hasMore: data.has_more }
+}

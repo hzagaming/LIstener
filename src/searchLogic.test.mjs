@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createSearchFallbackError, filterTracksByPlayback, searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
+import {
+  createSearchFallbackError, filterTracksByPlayback, parseSearchPage,
+  searchFallbackTracks, searchInputMode,
+} from './searchLogic.mjs'
 
 test('carries fallback results without disguising an upstream search failure', () => {
   const tracks = [{ id: 'demo-1' }]
@@ -35,4 +38,20 @@ test('hides previews by default while preserving full tracks and metadata', () =
   assert.deepEqual(filterTracksByPlayback(tracks, 'full').map(({ id }) => id), ['full'])
   assert.equal(filterTracksByPlayback(tracks, 'all'), tracks)
   assert.deepEqual(filterTracksByPlayback(null, 'all'), [])
+})
+
+test('validates the versioned paginated search envelope', () => {
+  const valid = { id: '1' }
+  assert.deepEqual(parseSearchPage({
+    success: true,
+    data: { page: 2, has_more: true, items: [valid] },
+  }, (item) => item === valid), { tracks: [valid], page: 2, hasMore: true })
+
+  for (const payload of [
+    null,
+    { success: false, data: { page: 1, has_more: false, items: [] } },
+    { success: true, data: { page: 0, has_more: false, items: [] } },
+    { success: true, data: { page: 1, has_more: 'yes', items: [] } },
+    { success: true, data: { page: 1, has_more: false, items: [{}] } },
+  ]) assert.equal(parseSearchPage(payload, (item) => item === valid), null)
 })

@@ -143,6 +143,10 @@ export const createMusicService = ({
         const index = nextIndex
         nextIndex += 1
         const provider = selectedProviders[index]
+        if (Number.isInteger(provider.maxSearchPages) && page > provider.maxSearchPages) {
+          results[index] = { status: 'fulfilled', value: [] }
+          continue
+        }
         try {
           results[index] = {
             status: 'fulfilled',
@@ -282,6 +286,8 @@ export const createMusicService = ({
         providerErrors,
         cached: false,
         hasMore: tracks.length > pageSize || providerTracks.some((items, index) => {
+          const pageCap = selectedProviders[index].maxSearchPages
+          if (Number.isInteger(pageCap) && page >= pageCap) return false
           const cap = selectedProviders[index].maxSearchResults
           const expected = Number.isInteger(cap) && cap > 0 ? Math.min(pageSize, cap) : pageSize
           return items.length >= expected

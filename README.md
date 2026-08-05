@@ -1,8 +1,8 @@
 # Listener
 
-一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、本地音乐、播放队列和按来源授权的歌词与下载能力。
+一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、基于歌单的相似推荐、本地音乐、播放队列和按来源授权的歌词与下载能力。
 
-当前版本：`0.4.22`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.4.23`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
@@ -39,11 +39,13 @@ npm run build
 
 Node 聚合模式默认使用“完整与元数据”播放范围：隐藏 Apple 试听结果，保留 Wikimedia/Audius 完整音频和网易云/MusicBrainz 目录元数据；可切换为“仅完整可播”或“包含试听”。GitHub Pages 只有浏览器可直连的 Apple 公共接口，因此默认保留试听结果。
 
+打开自建歌单后会根据主要歌手或专辑自动展示最多 8 首真实相似结果；“显示更多/加载更多”和连续播放会继续请求 Provider 分页。推荐不写入本地存储，不使用演示或 Fixture 歌曲，并排除试听；连续队列只自动追加 Provider 明确授权为完整播放的音源，没有合法完整音源时只保留元数据说明或循环已有可播放队列。
+
 地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、Apple Music、MusicBrainz、Audius API 和 Wikimedia Commons 文件页地址/ID。解析只识别格式，不代表对应平台已经获得搜索、播放或下载授权；健康接口会返回当前实际连接的来源和能力。
 
 开发模式未配置 `VITE_MUSIC_API_BASE` 时通过 Vite 的同源 `/api` 代理连接本地聚合服务；生产构建未配置时直接使用 Apple 公共搜索，不会探测不存在的 `/api`。跨域部署 Node API 时，将 `VITE_MUSIC_API_BASE` 设置为实际 API Origin。
 
-接口：
+兼容接口：
 
 - `GET /api/search?q=关键词` → `{ "tracks": Track[] }`
 - `GET /api/health` → `{ "status": "ok", "sources": ["apple", "musicbrainz", "wikimedia"], "capabilities": { ... } }`
@@ -53,7 +55,7 @@ Node 聚合模式默认使用“完整与元数据”播放范围：隐藏 Apple
 - `GET /api/lyrics?source=来源&id=歌曲ID` → Provider 授权的歌词
 - `GET /api/download?source=来源&id=歌曲ID` → Provider 授权的下载描述
 
-新版接口在保持以上契约的同时支持指定来源和分页：
+当前页面搜索与歌单推荐使用支持指定来源和分页的新版接口；以上兼容契约继续供已有调用方使用：
 
 - `GET /api/music/providers`
 - `GET /api/music/search?q=关键词&provider=all&page=1&page_size=20`

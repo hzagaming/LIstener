@@ -52,6 +52,8 @@ test('local development starts the aggregate API and routes the client through i
   assert.equal(packageJson.scripts.dev, 'node server/dev.mjs')
   assert.equal(packageJson.scripts['dev:client'], 'vite')
   assert.match(provider, /const apiBase = configuredApiBase \|\| \(import\.meta\.env\.DEV \? window\.location\.origin : ''\)/)
+  assert.match(provider, /new URL\('\/api\/music\/search', this\.baseUrl\)/)
+  assert.doesNotMatch(provider, /new URL\('\/api\/search', this\.baseUrl\)/)
   assert.match(dev, /server\/index\.mjs/)
   assert.match(dev, /node_modules\/vite\/bin\/vite\.js/)
 })
@@ -108,6 +110,31 @@ test('the UI exposes one music output and hides internal fixture identifiers', a
   assert.match(app, /完整与元数据/)
   assert.match(app, /仅完整可播/)
   assert.match(app, /包含试听/)
+})
+
+test('playlist recommendations stay derived, cancellable, and free of previews', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const logic = await readFile(new URL('./recommendationLogic.mjs', import.meta.url), 'utf8')
+
+  assert.match(app, /recommendationControllerRef\.current\?\.abort\(\)/)
+  assert.match(app, /mergeRecommendationPages\(playlist\.tracks, append \? playlistRecommendations : \[\], filtered, 500\)/)
+  assert.match(app, /shouldPrefetchRecommendations/)
+  assert.match(app, /continuousPlaylistId/)
+  assert.match(app, /useState\(8\)/)
+  assert.match(app, /playlistRecommendations\.slice\(0, recommendationVisibleLimit\)/)
+  assert.match(app, /推荐理由：\$\{reason\}/)
+  assert.match(app, /相似推荐/)
+  assert.doesNotMatch(app, /listener\.recommend/)
+  assert.match(logic, /playback === 'preview'/)
+})
+
+test('the homepage loads named artists from real providers instead of fixtures', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+
+  assert.match(app, /musicProvider\.searchPage\('周杰伦'/)
+  assert.match(app, /musicProvider\.searchPage\('Taylor Swift'/)
+  assert.match(app, /周杰伦 × Taylor Swift/)
+  assert.doesNotMatch(app, /initialTracks\.slice\(0, 4\)\.map/)
 })
 
 test('mobile and queue dialogs keep valid semantics and move focus inside', async () => {

@@ -1,11 +1,11 @@
 import { tracks } from '../data/catalog'
 import { abortableDelay, createRequestSignal } from '../requestPolicy.mjs'
-import { createSearchFallbackError } from '../searchLogic.mjs'
+import { createSearchFallbackError, parseSearchPage } from '../searchLogic.mjs'
 import { isMusicIdentification, isMusicSource, isTrack } from '../types/music'
 import { isSafeUrl } from '../urlPolicy.mjs'
 import { createPublicAppleProvider } from './publicAppleProvider.mjs'
 import type {
-  DownloadDescriptor, Lyrics, MusicIdentification, MusicProvider, MusicSource,
+  DownloadDescriptor, Lyrics, MusicIdentification, MusicProvider, MusicSearchPage, MusicSearchPageOptions, MusicSource,
   ProviderStatus, SourceCapabilities, Track,
 } from '../types/music'
 
@@ -63,6 +63,14 @@ class DemoProvider implements MusicProvider {
     )
   }
 
+  async searchPage(query: string, options: MusicSearchPageOptions = {}, signal?: AbortSignal): Promise<MusicSearchPage> {
+    const page = Math.max(1, options.page ?? 1)
+    const pageSize = Math.min(50, Math.max(1, options.pageSize ?? 20))
+    const matches = await this.search(query, signal)
+    const start = (page - 1) * pageSize
+    return { tracks: matches.slice(start, start + pageSize), page, hasMore: start + pageSize < matches.length }
+  }
+
   async resolve(track: Track): Promise<string> {
     return track.audioUrl
   }
@@ -94,23 +102,35 @@ class ApiProvider implements MusicProvider {
   ) {}
 
   async search(query: string, signal?: AbortSignal): Promise<Track[]> {
-    if (!query.trim()) return this.fallback.search(query, signal)
+    return (await this.searchPage(query, {}, signal)).tracks
+  }
+
+  async searchPage(query: string, options: MusicSearchPageOptions = {}, signal?: AbortSignal): Promise<MusicSearchPage> {
+    const term = query.trim()
+    const provider = options.provider ?? 'all'
+    const page = options.page ?? 1
+    const pageSize = options.pageSize ?? 20
+    if (!term) return this.fallback.searchPage(query, options, signal)
     try {
-      const url = new URL('/api/search', this.baseUrl)
-      url.searchParams.set('q', query.trim())
+      const url = new URL('/api/music/search', this.baseUrl)
+      url.searchParams.set('q', term)
+      url.searchParams.set('provider', provider)
+      url.searchParams.set('page', String(page))
+      url.searchParams.set('page_size', String(pageSize))
       const response = await fetch(url, {
         headers: { Accept: 'application/json' },
         signal: createRequestSignal(signal, 10_000),
       })
       if (!response.ok) throw new Error(`search failed: ${response.status}`)
-      const payload = await response.json() as { tracks?: Track[] }
-      if (!Array.isArray(payload.tracks) || !payload.tracks.every(isTrack)) throw new Error('invalid search response')
-      return payload.tracks
+      const result = parseSearchPage(await response.json(), isTrack)
+      if (!result || result.page !== page) throw new Error('invalid search response')
+      return result
     } catch (error) {
       if (signal?.aborted) throw error
-      const fallbackTracks = await this.fallback.search(query, signal)
+      if (provider !== 'all' || page !== 1) throw error
+      const fallbackPage = await this.fallback.searchPage(query, options, signal)
       if (signal?.aborted) throw signal.reason ?? error
-      throw createSearchFallbackError(fallbackTracks)
+      throw createSearchFallbackError(fallbackPage.tracks)
     }
   }
 

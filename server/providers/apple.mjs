@@ -54,15 +54,16 @@ export const createAppleProvider = ({
     enabled: true,
     experimental: false,
     official: true,
+    maxSearchPages: 1,
     allowedHosts: ['itunes.apple.com'],
     capabilities: { search: true, playback: true, lyrics: false, download: false },
 
     async search(query, limit = 20, signal, page = 1) {
+      if (page > 1) return []
       const url = new URL(searchUrl)
       url.searchParams.set('term', query.trim())
       url.searchParams.set('entity', 'song')
       url.searchParams.set('limit', String(Math.min(50, Math.max(1, limit))))
-      url.searchParams.set('offset', String(Math.max(0, page - 1) * limit))
       url.searchParams.set('country', country)
       return (await request(url, signal)).map(normalizeSong).filter(Boolean)
     },

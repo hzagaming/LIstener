@@ -131,6 +131,7 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .track-card__meta h3, .playlist-card h3 { font-size: 14px; margin: 0 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track-card--current .track-card__meta h3 { color: #b94724; }
 .track-card__meta p { font-size: 12px; color: var(--muted); margin: 0 0 7px; }
+.track-card__meta small { display: block; margin: -3px 0 6px; color: #8d4934; font-size: 9px; font-weight: 600; }
 .source { display: inline-flex; font-size: 10px; line-height: 1; border: 1px solid; border-radius: 2px; padding: 3px 5px; color: #806c5e; }
 .source--netease { color: #9b2d30; }.source--qq { color: #68744f; }.source--kugou { color: #526f84; }.source--apple { color: #9b3f52; }.source--musicbrainz { color: #8a4f76; }.source--audius { color: #6b4db5; }.source--wikimedia { color: #735b3e; }.source--demo { color: #805f82; }
 .track-card > .like-button { position: absolute; right: 0; bottom: 20px; min-width: 40px; min-height: 40px; display: grid; place-items: center; }
@@ -228,6 +229,7 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .track-row__title { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .track-row__title strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track-row__title span, .track-row__album, .track-row__duration { font-size: 11px; color: #69665f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track-row__context { color: #74654f; font-size: 10px; font-weight: 600; }
 .track-row__availability { color: #8d4934; font-size: 10px; font-weight: 600; }
 .track-row__source-mobile { display: none; font: inherit; }
 .track-row__duration { font-variant-numeric: tabular-nums; }
@@ -251,12 +253,19 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .playlist-grid--user { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .playlist-card--active .playlist-card__visual { outline: 3px solid var(--orange); outline-offset: -3px; }
 .playlist-detail { padding-top: 8px; }
+.playlist-recommendations { padding-top: 4px; }
+.playlist-recommendations .section-index svg { width: 15px; height: 15px; }
+.recommendation-actions { display: flex; align-items: center; gap: 10px; }
+.recommendation-actions > span { color: var(--muted); font-size: 10px; }
+.recommendation-actions button { border: 1px solid #bdb8ad; background: transparent; min-height: 36px; padding: 0 11px; display: flex; align-items: center; gap: 6px; color: #625f58; font-size: 11px; cursor: pointer; }
+.recommendation-actions button svg { width: 13px; }
 .section-actions { display: flex; gap: 8px !important; }
 .section-actions button { border: 1px solid #bdb8ad; background: transparent; min-height: 36px; padding: 0 11px; display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; }
 .section-actions button svg { width: 13px; }
 .compact-empty { min-height: 100px; border: 1px dashed #c7c2b7; color: #706d66; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 11px; padding: 20px; }
 .compact-empty > svg { width: 20px; }
 .compact-empty button { border: 0; border-bottom: 1px solid #99948a; background: none; color: #625f58; padding: 2px; cursor: pointer; }
+.home-empty { min-height: 220px; }
 
 .queue-drawer { position: fixed; z-index: 80; right: 0; top: 0; bottom: calc(var(--player) + var(--safe-bottom)); width: min(380px, 92vw); background: #f6f3ea; box-shadow: -15px 0 35px rgba(34,33,30,.13); padding: 30px; display: flex; flex-direction: column; overflow: hidden; }
 .queue-drawer--open { animation: drawer-in .28s ease both; }
@@ -386,6 +395,7 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .identification { grid-template-columns: 1fr; gap: 8px; }
   .section-heading { align-items: flex-start; gap: 12px; }
   .section-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .recommendation-actions { align-items: flex-end; flex-direction: column; }
   .player { grid-template-columns: minmax(0, 1fr) auto; padding: 0 13px var(--safe-bottom); }
   .player__track .cover { width: 45px; height: 45px; }
   .player__track > .like-button { display: none; }

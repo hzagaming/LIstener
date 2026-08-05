@@ -55,6 +55,31 @@ test('public Apple search returns normalized playable tracks from the browser-sa
   }])
 })
 
+test('public Apple pagination is honest about its single public result page', async () => {
+  let calls = 0
+  const provider = createPublicAppleProvider({
+    fallback,
+    fetchImpl: async () => {
+      calls += 1
+      return Response.json({ results: [
+        { trackId: 1, trackName: 'One', artistName: 'Artist' },
+        { trackId: 2, trackName: 'Two', artistName: 'Artist' },
+      ] })
+    },
+  })
+
+  const first = await provider.searchPage('Artist', { provider: 'apple', page: 1, pageSize: 1 })
+  assert.deepEqual(first.tracks.map(({ id }) => id), ['1'])
+  assert.equal(first.hasMore, false)
+  assert.deepEqual(await provider.searchPage('Artist', { provider: 'apple', page: 2 }), {
+    tracks: [], page: 2, hasMore: false,
+  })
+  assert.deepEqual(await provider.searchPage('Artist', { provider: 'netease', page: 1 }), {
+    tracks: [], page: 1, hasMore: false,
+  })
+  assert.equal(calls, 1)
+})
+
 test('public Apple search rejects unsafe media fields without dropping metadata', async () => {
   const provider = createPublicAppleProvider({
     fallback,

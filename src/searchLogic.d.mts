@@ -10,3 +10,8 @@ export declare const filterTracksByPlayback: <T extends { capabilities: { playba
   tracks: T[] | null | undefined,
   mode: 'no-preview' | 'full' | 'all',
 ) => T[]
+export declare const parseSearchPage: <T>(payload: unknown, isItem: (item: unknown) => item is T) => {
+  tracks: T[]
+  page: number
+  hasMore: boolean
+} | null

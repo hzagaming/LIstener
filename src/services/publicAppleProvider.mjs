@@ -190,6 +190,16 @@ export const createPublicAppleProvider = ({
       }
     },
 
+    async searchPage(query, options = {}, signal) {
+      const page = Math.max(1, options.page ?? 1)
+      if ((options.provider && !['all', 'apple'].includes(options.provider)) || page > 1) {
+        return { tracks: [], page, hasMore: false }
+      }
+      const pageSize = Math.min(20, Math.max(1, options.pageSize ?? 20))
+      const tracks = await this.search(query, signal)
+      return { tracks: tracks.slice(0, pageSize), page, hasMore: false }
+    },
+
     async resolve(track, signal) {
       if (track.source !== 'apple') return fallback.resolve(track, signal)
       if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError')

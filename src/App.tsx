@@ -12,6 +12,9 @@ import {
   mediaErrorAction, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
+import {
+  mergeRecommendationPages, nextPlayableRecommendation, recommendationSeed, shouldPrefetchRecommendations,
+} from './recommendationLogic.mjs'
 import { filterTracksByPlayback, searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
 import { musicProvider, publicAppleMode, sourceLabel } from './services/musicProvider'
 import { isPlaylist, isTrack, musicSources, trackKey } from './types/music'
@@ -21,6 +24,7 @@ import type { MusicIdentification, MusicSource, Playlist, ProviderStatus, Track 
 type View = 'discover' | 'search' | 'library'
 type PlayMode = 'toggle' | 'play'
 type PlaybackFilter = 'no-preview' | 'full' | 'all'
+type PlaylistRecommendation = { track: Track; reason: string }
 const identifiableSources: MusicSource[] = publicAppleMode ? ['apple'] : musicSources.filter((source) => !['demo', 'local', 'fixture'].includes(source))
 
 const readStoredTracks = (key: string, fallback: Track[], allowEmpty = false) => {
@@ -124,11 +128,12 @@ type TrackRowProps = {
   onLyrics: () => void
   onDownload: () => void
   onRemove?: (event: React.MouseEvent<HTMLButtonElement>) => void
+  context?: string
 }
 
 function TrackRow({
   track, index, current, playing, pending, buffering, liked, onPlay, onLike, onPlaylist,
-  onLyrics, onDownload, onRemove,
+  onLyrics, onDownload, onRemove, context,
 }: TrackRowProps) {
   const playbackUnavailable = track.capabilities.playback === 'none'
   const visualState = playbackVisualState({
@@ -151,6 +156,7 @@ function TrackRow({
       <div className="track-row__title">
         <strong>{track.title}</strong>
         <span>{track.artist}<small className="track-row__source-mobile"> · {sourceLabel(track.source)}</small></span>
+        {context && <small className="track-row__context">{context}</small>}
         {playbackUnavailable && <small className="track-row__availability">仅元数据 · 不可播放</small>}
       </div>
       <span className="track-row__album">{track.album}</span>
@@ -172,6 +178,10 @@ function App() {
   const [view, setView] = useState<View>('discover')
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Track[]>(initialTracks)
+  const [homeTracks, setHomeTracks] = useState<Track[]>([])
+  const [homeLoading, setHomeLoading] = useState(true)
+  const [homeError, setHomeError] = useState(false)
+  const [homeRevision, setHomeRevision] = useState(0)
   const [resultQuery, setResultQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [searchDegraded, setSearchDegraded] = useState(false)
@@ -194,6 +204,13 @@ function App() {
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>(readStoredPlaylists)
   const [localTracks, setLocalTracks] = useState<Track[]>([])
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null)
+  const [playlistRecommendations, setPlaylistRecommendations] = useState<PlaylistRecommendation[]>([])
+  const [recommendationLoading, setRecommendationLoading] = useState(false)
+  const [recommendationError, setRecommendationError] = useState(false)
+  const [recommendationPage, setRecommendationPage] = useState(0)
+  const [recommendationHasMore, setRecommendationHasMore] = useState(false)
+  const [recommendationVisibleLimit, setRecommendationVisibleLimit] = useState(8)
+  const [continuousPlaylistId, setContinuousPlaylistId] = useState<string | null>(null)
   const [pendingDeletePlaylistId, setPendingDeletePlaylistId] = useState<string | null>(null)
   const [playlistModalTrack, setPlaylistModalTrack] = useState<Track | null>()
   const [playlistName, setPlaylistName] = useState('')
@@ -224,6 +241,13 @@ function App() {
   const audioRef = useRef<HTMLAudioElement>(null)
   const resolveControllerRef = useRef<AbortController | null>(null)
   const searchControllerRef = useRef<AbortController | null>(null)
+  const recommendationControllerRef = useRef<AbortController | null>(null)
+  const homeControllerRef = useRef<AbortController | null>(null)
+  const recommendationLoadingRef = useRef(false)
+  const recommendationRequestRef = useRef(0)
+  const recommendationPrefetchKeyRef = useRef('')
+  const selectedPlaylistIdRef = useRef(selectedPlaylistId)
+  const continuousPlaylistIdRef = useRef(continuousPlaylistId)
   const identifyControllerRef = useRef<AbortController | null>(null)
   const lyricsControllerRef = useRef<AbortController | null>(null)
   const playRequestRef = useRef(0)
@@ -245,6 +269,8 @@ function App() {
   const lastAudibleVolumeRef = useRef(volume || 0.72)
   const localFilesRef = useRef(new Map<string, { file: File; url: string }>())
   const localLyricsRef = useRef(new Map<string, { plain: string; lrc: string }>())
+  selectedPlaylistIdRef.current = selectedPlaylistId
+  continuousPlaylistIdRef.current = continuousPlaylistId
 
   const showNotice = (message: string) => {
     setNotice(message)
@@ -380,9 +406,12 @@ function App() {
     playRequestRef.current += 1
     resolveControllerRef.current?.abort()
     searchControllerRef.current?.abort()
+    homeControllerRef.current?.abort()
+    recommendationControllerRef.current?.abort()
     identifyControllerRef.current?.abort()
     lyricsControllerRef.current?.abort()
     if (mediaRetryTimerRef.current) window.clearTimeout(mediaRetryTimerRef.current)
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
     for (const { url } of localFilesRef.current.values()) URL.revokeObjectURL(url)
   }, [])
 
@@ -526,6 +555,28 @@ function App() {
     () => userPlaylists.find((playlist) => playlist.id === selectedPlaylistId) ?? null,
     [selectedPlaylistId, userPlaylists],
   )
+  const selectedRecommendationSeed = useMemo(
+    () => recommendationSeed(selectedPlaylist?.tracks),
+    [selectedPlaylist],
+  )
+  const selectedPlaylistRecommendationKey = useMemo(
+    () => selectedPlaylist
+      ? `${selectedPlaylist.id}:${selectedPlaylist.tracks.map((track) => `${trackKey(track)}:${track.artist}:${track.album}`).join('|')}`
+      : '',
+    [selectedPlaylist],
+  )
+  const recommendationTracks = useMemo(
+    () => playlistRecommendations.map(({ track }) => track),
+    [playlistRecommendations],
+  )
+  const visibleRecommendations = useMemo(
+    () => playlistRecommendations.slice(0, recommendationVisibleLimit),
+    [playlistRecommendations, recommendationVisibleLimit],
+  )
+  const selectedPlaylistPlayableCount = useMemo(
+    () => selectedPlaylist ? playableTracks([...selectedPlaylist.tracks, ...recommendationTracks]).length : 0,
+    [recommendationTracks, selectedPlaylist],
+  )
   const today = useMemo(
     () => new Intl.DateTimeFormat('en-US', { month: '2-digit', day: '2-digit' }).format(new Date()),
     [],
@@ -534,6 +585,136 @@ function App() {
   useEffect(() => {
     if (sourceFilter !== 'all' && !resultSources.includes(sourceFilter)) setSourceFilter('all')
   }, [resultSources, sourceFilter])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    homeControllerRef.current = controller
+    setHomeLoading(true)
+    setHomeError(false)
+    const provider = publicAppleMode ? 'apple' : 'netease'
+    void Promise.allSettled([
+      musicProvider.searchPage('周杰伦', { provider, pageSize: 4 }, controller.signal),
+      musicProvider.searchPage('Taylor Swift', { provider, pageSize: 4 }, controller.signal),
+    ]).then(([jay, taylor]) => {
+      if (controller.signal.aborted) return
+      const jayTracks = jay.status === 'fulfilled' ? jay.value.tracks : []
+      const taylorTracks = taylor.status === 'fulfilled' ? taylor.value.tracks : []
+      const candidates = [...jayTracks.slice(0, 2), ...taylorTracks.slice(0, 2)]
+      const seen = new Set<string>()
+      const unique = candidates.filter((track) => {
+        const key = trackKey(track)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      setHomeTracks(unique)
+      setHomeError(!unique.length)
+    }).finally(() => {
+      if (homeControllerRef.current === controller) homeControllerRef.current = null
+      if (!controller.signal.aborted) setHomeLoading(false)
+    })
+    return () => {
+      if (homeControllerRef.current === controller) homeControllerRef.current = null
+      controller.abort()
+    }
+  }, [homeRevision])
+
+  const loadRecommendationPage = async (playlist: Playlist, page: number, append: boolean) => {
+    if (recommendationLoadingRef.current) return null
+    const seed = recommendationSeed(playlist.tracks)
+    if (!seed) return null
+    const requestId = ++recommendationRequestRef.current
+    const controller = new AbortController()
+    recommendationControllerRef.current = controller
+    recommendationLoadingRef.current = true
+    setRecommendationLoading(true)
+    setRecommendationError(false)
+    try {
+      let candidates: Track[]
+      let hasMore: boolean
+      try {
+        const result = await musicProvider.searchPage(seed.query, { page, pageSize: 30 }, controller.signal)
+        candidates = result.tracks
+        hasMore = result.hasMore
+      } catch (error) {
+        const fallback = page === 1 ? searchFallbackTracks<Track>(error) : null
+        if (!fallback) throw error
+        candidates = fallback.filter((track) => !['demo', 'fixture'].includes(track.source))
+        if (!candidates.length) throw error
+        hasMore = false
+      }
+      const filtered = filterTracksByPlayback(candidates, 'no-preview')
+      const merged = mergeRecommendationPages(playlist.tracks, append ? playlistRecommendations : [], filtered, 500)
+      if (requestId !== recommendationRequestRef.current || selectedPlaylistIdRef.current !== playlist.id) return null
+      setPlaylistRecommendations(merged)
+      setRecommendationPage(page)
+      setRecommendationHasMore(hasMore && page < 100)
+      if (continuousPlaylistIdRef.current === playlist.id) {
+        const queued = new Set(queue.map(trackKey))
+        const additions = merged.map(({ track }) => track)
+          .filter((track) => track.capabilities.playback === 'full' && !queued.has(trackKey(track)))
+        if (additions.length) {
+          queueRevisionRef.current += 1
+          setQueue((previous) => {
+            const currentKeys = new Set(previous.map(trackKey))
+            return [...previous, ...additions.filter((track) => !currentKeys.has(trackKey(track)))]
+          })
+        }
+      }
+      return { recommendations: merged, hasMore }
+    } catch {
+      if (requestId === recommendationRequestRef.current && !controller.signal.aborted) setRecommendationError(true)
+      return null
+    } finally {
+      if (recommendationControllerRef.current === controller) recommendationControllerRef.current = null
+      if (requestId === recommendationRequestRef.current) {
+        recommendationLoadingRef.current = false
+        setRecommendationLoading(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    recommendationRequestRef.current += 1
+    recommendationControllerRef.current?.abort()
+    recommendationControllerRef.current = null
+    recommendationLoadingRef.current = false
+    setRecommendationError(false)
+    setPlaylistRecommendations([])
+    setRecommendationPage(0)
+    setRecommendationHasMore(false)
+    setRecommendationVisibleLimit(8)
+    recommendationPrefetchKeyRef.current = ''
+    continuousPlaylistIdRef.current = null
+    setContinuousPlaylistId(null)
+    if (!selectedPlaylist?.tracks.length || !selectedRecommendationSeed) {
+      setRecommendationLoading(false)
+      return
+    }
+    void loadRecommendationPage(selectedPlaylist, 1, false)
+    return () => {
+      recommendationRequestRef.current += 1
+      recommendationControllerRef.current?.abort()
+      recommendationControllerRef.current = null
+      recommendationLoadingRef.current = false
+    }
+  }, [selectedPlaylistId, selectedPlaylistRecommendationKey, selectedRecommendationSeed?.query]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!selectedPlaylist) return
+    const requestKey = `${selectedPlaylist.id}:${currentKey}`
+    if (!shouldPrefetchRecommendations({
+      continuous: continuousPlaylistId === selectedPlaylist.id,
+      currentIndex,
+      queueLength: queue.length,
+      hasMore: recommendationHasMore,
+      loading: recommendationLoading,
+      requestKey,
+      lastRequestKey: recommendationPrefetchKeyRef.current,
+    })) return
+    recommendationPrefetchKeyRef.current = requestKey
+    void loadRecommendationPage(selectedPlaylist, recommendationPage + 1, true)
+  }, [continuousPlaylistId, currentIndex, currentKey, queue.length, recommendationHasMore, recommendationLoading, recommendationPage, selectedPlaylist]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const cancelPendingPlay = () => {
     playRequestRef.current += 1
@@ -592,7 +773,7 @@ function App() {
     setIsBuffering(true)
   }
 
-  const resolveAndPlay = async (track: Track, list?: Track[], mode: PlayMode = 'toggle') => {
+  const resolveAndPlay = async (track: Track, list?: Track[], mode: PlayMode = 'toggle', continuationPlaylistId: string | null = null) => {
     if (shouldCancelPendingTrack(trackKey(track), pendingTrackKeyRef.current)) {
       cancelPendingPlay()
       showNotice('已取消加载')
@@ -600,6 +781,9 @@ function App() {
     }
     const target = preferResolvedCurrent(track, current)
     if (target.capabilities.playback === 'none') return showNotice('该来源没有可用音源')
+    if (continuationPlaylistId !== continuousPlaylistIdRef.current) recommendationPrefetchKeyRef.current = ''
+    continuousPlaylistIdRef.current = continuationPlaylistId
+    setContinuousPlaylistId(continuationPlaylistId)
     resolveControllerRef.current?.abort()
     resolveControllerRef.current = null
     const requestId = ++playRequestRef.current
@@ -646,7 +830,7 @@ function App() {
       setQueue((previous) => [current, ...previous])
     }
     if (!current.audioUrl) {
-      void resolveAndPlay(current, undefined, 'play')
+      void resolveAndPlay(current, undefined, 'play', continuousPlaylistId)
       return
     }
     cancelMediaRetry()
@@ -675,7 +859,7 @@ function App() {
     startCurrent()
   }
 
-  const skip = (direction: 1 | -1) => {
+  const skip = (direction: 1 | -1, continuationPlaylistId = continuousPlaylistId) => {
     if (!queue.length) return
     const currentTime = audioRef.current?.currentTime ?? progress
     if (direction === -1 && shouldRestartCurrentTrack(currentTime, currentIndex)) {
@@ -689,14 +873,14 @@ function App() {
       return
     }
     const nextIndex = currentIndex < 0 ? 0 : (currentIndex + direction + queue.length) % queue.length
-    void resolveAndPlay(queue[nextIndex], undefined, 'play')
+    void resolveAndPlay(queue[nextIndex], undefined, 'play', continuationPlaylistId)
   }
 
   const shuffle = () => {
     const candidates = queue.filter((track) => trackKey(track) !== currentKey)
     if (!candidates.length) return showNotice('播放队列里还没有其他歌曲')
     const track = candidates[Math.floor(Math.random() * candidates.length)]
-    void resolveAndPlay(track, undefined, 'play')
+    void resolveAndPlay(track, undefined, 'play', continuousPlaylistId)
   }
 
   const cycleRepeat = () => {
@@ -715,6 +899,7 @@ function App() {
       repeatMode,
     })
     if (!shouldApplyEndedAction(action)) return
+    const continuous = Boolean(continuousPlaylistId && selectedPlaylist?.id === continuousPlaylistId)
     setIsPlaying(false)
     setIsBuffering(false)
     if (action === 'restart' && audioRef.current) {
@@ -722,6 +907,19 @@ function App() {
       attemptPlayback(audioRef.current)
     } else if (action === 'next') {
       skip(1)
+    } else if (action === 'stop' && continuous && queue.length) {
+      const next = nextPlayableRecommendation(queue, playlistRecommendations)
+      if (next) {
+        queueRevisionRef.current += 1
+        setQueue((previous) => [...previous, next])
+        void resolveAndPlay(next, undefined, 'play', continuousPlaylistId)
+      } else {
+        if (queue.length === 1 && recommendationHasMore && selectedPlaylist && !recommendationLoading) {
+          recommendationPrefetchKeyRef.current = `${selectedPlaylist.id}:${currentKey}`
+          void loadRecommendationPage(selectedPlaylist, recommendationPage + 1, true)
+        }
+        skip(1, continuousPlaylistId)
+      }
     }
   }
 
@@ -737,9 +935,12 @@ function App() {
     showNotice(removing ? '已从收藏中移除' : '已加入喜欢的音乐')
   }
 
-  const openPlaylist = (playlist: Playlist) => {
-    const playable = playableTracks(playlist.tracks)
-    if (playable[0]) void resolveAndPlay(playable[0], playable, 'play')
+  const openPlaylist = (playlist: Playlist, continuous = false) => {
+    const recommended = continuous && selectedPlaylist?.id === playlist.id
+      ? recommendationTracks.filter((track) => track.capabilities.playback === 'full')
+      : []
+    const playable = playableTracks([...playlist.tracks, ...recommended])
+    if (playable[0]) void resolveAndPlay(playable[0], playable, 'play', continuous ? playlist.id : null)
     else showNotice('歌单里没有可播放的歌曲')
   }
 
@@ -1009,6 +1210,8 @@ function App() {
     queueRevisionRef.current += 1
     audioRef.current?.pause()
     setQueue([])
+    continuousPlaylistIdRef.current = null
+    setContinuousPlaylistId(null)
     setIsPlaying(false)
     setIsBuffering(false)
     showNotice('播放队列已清空')
@@ -1227,11 +1430,11 @@ function App() {
 
             <section className="content-section">
               <div className="section-heading">
-                <div><span className="section-index">01</span><h2>最近很对味</h2></div>
-                <button onClick={() => navigate('search')}>查看全部 <ArrowRight /></button>
+                <div><span className="section-index">01</span><h2>周杰伦 × Taylor Swift</h2></div>
+                <span className="searching-state" aria-live="polite">{homeLoading ? '正在加载真实曲目…' : homeError ? '真实音乐源暂不可用' : `来自真实音乐源 · ${homeTracks.length} 首`}</span>
               </div>
-              <div className="track-grid">
-                {initialTracks.slice(0, 4).map((track, index) => {
+              {homeTracks.length ? <div className="track-grid">
+                {homeTracks.map((track, index) => {
                   const key = trackKey(track)
                   const isCurrent = currentKey === key
                   const isLiked = liked.has(key)
@@ -1243,20 +1446,21 @@ function App() {
                   return (
                   <article className={`track-card ${isCurrent ? 'track-card--current' : ''}`} key={key}>
                     <div className="track-card__number">0{index + 1}</div>
-                    <button className="track-card__cover" disabled={playControlDisabled(track.capabilities.playback, isPending)} aria-busy={loading} aria-pressed={visualState === 'playing'} onClick={() => void resolveAndPlay(track, initialTracks)} aria-label={visualState === 'resolving' ? `取消加载 ${track.title}` : visualState === 'buffering' ? `正在缓冲 ${track.title}，点击暂停` : visualState === 'playing' ? `暂停 ${track.title}` : `播放 ${track.title}`}>
+                    <button className="track-card__cover" disabled={playControlDisabled(track.capabilities.playback, isPending)} title={track.capabilities.playback === 'none' ? '来源未提供可播放音源' : undefined} aria-busy={loading} aria-pressed={visualState === 'playing'} onClick={() => void resolveAndPlay(track, homeTracks)} aria-label={track.capabilities.playback === 'none' ? `${track.title} 仅提供元数据` : visualState === 'resolving' ? `取消加载 ${track.title}` : visualState === 'buffering' ? `正在缓冲 ${track.title}，点击暂停` : visualState === 'playing' ? `暂停 ${track.title}` : `播放 ${track.title}`}>
                       <Cover name={track.cover} />
                       <span className="cover-play">{loading ? <LoaderCircle className="spin" /> : visualState === 'playing' ? <Pause /> : <Play fill="currentColor" />}</span>
                     </button>
                     <div className="track-card__meta">
                       <h3>{track.title}</h3>
                       <p>{track.artist}</p>
+                      {track.capabilities.playback === 'none' && <small>仅元数据</small>}
                       <SourceBadge track={track} />
                     </div>
                     <button className={`like-button ${isLiked ? 'liked' : ''}`} onClick={() => toggleLike(track)} aria-label={`${isLiked ? '取消收藏' : '收藏'} ${track.title}`}><Heart fill={isLiked ? 'currentColor' : 'none'} /></button>
                   </article>
                   )
                 })}
-              </div>
+              </div> : <div className="compact-empty home-empty">{homeLoading ? <LoaderCircle className="spin" /> : <Sparkles />}<span>{homeLoading ? '正在获取周杰伦与 Taylor Swift 的真实歌曲' : '暂时无法获取主页真实歌曲'}</span>{!homeLoading && <button onClick={() => setHomeRevision((value) => value + 1)}>重新获取</button>}</div>}
             </section>
 
             <section className="content-section">
@@ -1393,12 +1597,12 @@ function App() {
               ) : <div className="compact-empty"><Library /><span>还没有自建歌单</span><button onClick={() => openPlaylistDialog(null)}>创建第一个歌单</button></div>}
             </section>
 
-            {selectedPlaylist && (
+            {selectedPlaylist && (<>
               <section id="selected-playlist-detail" className="library-section playlist-detail" aria-labelledby="selected-playlist-title">
                 <div className="section-heading">
                   <div><span className="section-index">{String(selectedPlaylist.tracks.length).padStart(2, '0')}</span><h2 id="selected-playlist-title" tabIndex={-1}>{selectedPlaylist.title}</h2></div>
                   <div className="section-actions">
-                    <button disabled={!selectedPlaylist.tracks.length} onClick={() => openPlaylist(selectedPlaylist)}><Play />播放全部</button>
+                    <button disabled={!selectedPlaylistPlayableCount} onClick={() => openPlaylist(selectedPlaylist, true)}><Play />连续播放</button>
                     <button className="danger" onClick={() => deletePlaylist(selectedPlaylist.id)}><Trash2 />{pendingDeletePlaylistId === selectedPlaylist.id ? '确认删除' : '删除歌单'}</button>
                   </div>
                 </div>
@@ -1410,7 +1614,7 @@ function App() {
                       pending={pendingTrackKey === trackKey(track)}
                       buffering={isBuffering && currentKey === trackKey(track)}
                       liked={liked.has(trackKey(track))}
-                      onPlay={() => void resolveAndPlay(track, selectedPlaylist.tracks)}
+                      onPlay={() => void resolveAndPlay(track, selectedPlaylist.tracks, 'toggle', selectedPlaylist.id)}
                       onLike={() => toggleLike(track)}
                       onPlaylist={() => openPlaylistDialog(track)}
                       onLyrics={() => void openLyrics(track)}
@@ -1424,7 +1628,42 @@ function App() {
                   {!selectedPlaylist.tracks.length && <div className="compact-empty"><ListMusic /><span>歌单还是空的</span><button onClick={() => navigate('search')}>去搜索音乐</button></div>}
                 </div>
               </section>
-            )}
+              {!!selectedPlaylist.tracks.length && (
+                <section className="library-section playlist-recommendations" aria-labelledby="playlist-recommendations-title">
+                  <div className="section-heading">
+                    <div><span className="section-index"><Sparkles /></span><h2 id="playlist-recommendations-title">相似推荐</h2></div>
+                    <div className="recommendation-actions">
+                      <span aria-live="polite">{recommendationLoading ? '正在寻找更多相似歌曲…' : continuousPlaylistId === selectedPlaylist.id ? '连续推荐已开启' : selectedRecommendationSeed ? `基于 ${selectedRecommendationSeed.label} · ${visibleRecommendations.length} 首` : ''}</span>
+                      {(playlistRecommendations.length > recommendationVisibleLimit || recommendationHasMore) && <button disabled={recommendationLoading} onClick={() => {
+                        setRecommendationVisibleLimit((limit) => limit + 8)
+                        if (recommendationVisibleLimit >= playlistRecommendations.length && recommendationHasMore) void loadRecommendationPage(selectedPlaylist, recommendationPage + 1, true)
+                      }}>{recommendationLoading ? <LoaderCircle className="spin" /> : <Plus />}{playlistRecommendations.length > recommendationVisibleLimit ? '显示更多' : '加载更多'}</button>}
+                      {continuousPlaylistId === selectedPlaylist.id && <button onClick={() => { continuousPlaylistIdRef.current = null; setContinuousPlaylistId(null) }}>停止连续推荐</button>}
+                    </div>
+                  </div>
+                  <div className="track-list" role="list">
+                    {visibleRecommendations.map(({ track, reason }, index) => (
+                      <TrackRow
+                        key={trackKey(track)} track={track} index={index}
+                        current={currentKey === trackKey(track)} playing={isPlaying}
+                        pending={pendingTrackKey === trackKey(track)}
+                        buffering={isBuffering && currentKey === trackKey(track)}
+                        liked={liked.has(trackKey(track))}
+                        context={`推荐理由：${reason}`}
+                        onPlay={() => void resolveAndPlay(track, recommendationTracks, 'toggle', selectedPlaylist.id)}
+                        onLike={() => toggleLike(track)}
+                        onPlaylist={() => openPlaylistDialog(track)}
+                        onLyrics={() => void openLyrics(track)}
+                        onDownload={() => void downloadTrack(track)}
+                      />
+                    ))}
+                    {recommendationLoading && !playlistRecommendations.length && <div className="compact-empty"><LoaderCircle className="spin" /><span>正在分析歌单里的歌手和专辑</span></div>}
+                    {!recommendationLoading && recommendationError && <div className="compact-empty"><Sparkles /><span>推荐暂时不可用</span><button onClick={() => void loadRecommendationPage(selectedPlaylist, recommendationPage + 1, recommendationPage > 0)}>重新获取</button></div>}
+                    {!recommendationLoading && !recommendationError && !playlistRecommendations.length && <div className="compact-empty"><Sparkles /><span>暂时没有找到不含试听的相似歌曲</span>{recommendationHasMore ? <button onClick={() => void loadRecommendationPage(selectedPlaylist, recommendationPage + 1, true)}>继续查找</button> : <button onClick={() => navigate('search')}>去搜索</button>}</div>}
+                  </div>
+                </section>
+              )}
+            </>)}
 
             <section className="library-section">
               <div className="section-heading"><div><span className="section-index">02</span><h2 ref={likedHeadingRef} tabIndex={-1}>喜欢的音乐</h2></div></div>
@@ -1458,7 +1697,7 @@ function App() {
               {queue.map((track, index) => {
                 const isCurrent = trackKey(track) === currentKey
                 return <div className={`queue-item ${isCurrent ? 'current' : ''}`} key={`${trackKey(track)}-${index}`}>
-                  <button className="queue-item__main" aria-current={isCurrent ? 'true' : undefined} onClick={() => void resolveAndPlay(track, undefined, 'play')}><Cover name={track.cover} size="small" /><span><strong>{track.title}</strong><small>{track.artist}</small></span>{isCurrent && <i><Waves /></i>}</button>
+                  <button className="queue-item__main" aria-current={isCurrent ? 'true' : undefined} onClick={() => void resolveAndPlay(track, undefined, 'play', continuousPlaylistId)}><Cover name={track.cover} size="small" /><span><strong>{track.title}</strong><small>{track.artist}</small></span>{isCurrent && <i><Waves /></i>}</button>
                   <button className="icon-button queue-item__remove" aria-label={`从队列移除 ${track.title}`} onClick={(event) => {
                     focusAfterRemoval(event.currentTarget, '.queue-drawer__list', '.queue-item__remove', '.queue-drawer__header .icon-button')
                     removeFromQueue(track)

@@ -37,7 +37,22 @@ test('normalizes Apple search results with playable previews', async () => {
   }])
   assert.equal(requestedUrl.searchParams.get('term'), '周杰伦')
   assert.equal(requestedUrl.searchParams.get('limit'), '5')
+  assert.equal(requestedUrl.searchParams.get('offset'), null)
   assert.equal(requestedUrl.searchParams.get('country'), 'CN')
+})
+
+test('does not repeat Apple results beyond its single supported search page', async () => {
+  let calls = 0
+  const provider = createAppleProvider({
+    fetchImpl: async () => {
+      calls += 1
+      return Response.json({ resultCount: 1, results: [song] })
+    },
+  })
+
+  assert.equal(provider.maxSearchPages, 1)
+  assert.deepEqual(await provider.search('周杰伦', 5, undefined, 2), [])
+  assert.equal(calls, 0)
 })
 
 test('keeps searchable metadata when a playable preview is unavailable', async () => {

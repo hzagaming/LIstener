@@ -535,6 +535,26 @@ test('searches one provider with pagination and reports cache metadata', async (
   assert.deepEqual(calls, [['apple', '海', 3, 2]])
 })
 
+test('honors a provider search page limit without reporting duplicate pages', async () => {
+  const calls = []
+  const service = createMusicService({ providers: [{
+    id: 'single-page',
+    maxSearchPages: 1,
+    async search(_query, _limit, _signal, page) {
+      calls.push(page)
+      return page === 1 ? [{ ...track('1'), source: 'single-page' }] : []
+    },
+  }] })
+
+  const first = await service.searchDetailed({ query: 'song', provider: 'single-page', page: 1, pageSize: 1 })
+  const second = await service.searchDetailed({ query: 'song', provider: 'single-page', page: 2, pageSize: 1 })
+
+  assert.equal(first.hasMore, false)
+  assert.deepEqual(second.tracks, [])
+  assert.equal(second.hasMore, false)
+  assert.deepEqual(calls, [1])
+})
+
 test('reports more pages when a provider reaches its declared search cap', async () => {
   const provider = {
     id: 'bounded',

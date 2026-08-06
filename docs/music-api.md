@@ -84,7 +84,7 @@
 
 - `GET /api/download?source={provider}&id={trackId}` 返回 Provider 授权的 `{ "url", "filename" }` 描述；未声明 `download: true` 的来源返回能力错误。
 - `GET /api/download/file?source=wikimedia&id={trackId}` 重新校验 Provider 下载能力后，仅从固定 `upload.wikimedia.org` Host 流式传输音频，并返回附件响应头。默认上限 128 MiB、总超时 120 秒，不落盘、不缓存，也不接受任意 URL。
-- `GET /api/artwork?source={provider}&id={trackId}` 先由 Provider 查询歌曲，再从该来源固定封面 Host 下载受限图片；支持 Apple、网易和 Audius，默认上限 8 MiB。
+- `GET /api/artwork?source={provider}&id={trackId}` 先由 Provider 查询歌曲，再从该来源固定封面 Host 下载受限图片；支持 Apple、网易、Audius 和 YouTube 官方缩略图，默认上限 8 MiB。
 
 ## 账号与用户状态
 

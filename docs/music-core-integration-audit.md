@@ -6,7 +6,8 @@
 - 前端：React 18、TypeScript 5 严格模式、Vite 6。
 - 后端：Node `http`、原生 `fetch` 与 `AbortSignal`，入口为 `server/index.mjs`。
 - 测试：Node Test Runner；构建执行 TypeScript 静态检查和 Vite 打包。
-- 数据库、队列、Docker、CI：当前均未配置。
+- 数据库：本地 SQLite 账号、会话和用户状态；运行时文件位于忽略目录，不进入发布物。
+- 队列、共享缓存与 Docker：当前未配置；CI 使用 GitHub Actions 构建和发布 Pages。
 - 缓存与限流：进程内搜索缓存、请求合并、API IP 限流及部分 Provider 请求调度。
 - 配置：通过 `process.env` 读取，公开变量示例位于 `.env.example`。
 - 日志：`server/logger.mjs` 输出带请求 ID、状态和耗时的结构化 JSON，并递归脱敏凭据与签名查询参数。
@@ -34,6 +35,8 @@
 | Audius | conditional | 搜索、公开流 | 仅设置服务端 API Key 时启用，播放前检查公开权限 |
 | MusicBrainz | enabled | CC0 录音元数据 | 默认使用项目地址标识客户端，按官方速率调度；部署者可覆盖联系信息 |
 | NetEase | experimental | 元数据搜索；播放禁用 | 仅显式开关启用；接口未获官方稳定性确认，不解析播放地址 |
+| Wikimedia | enabled | 开放音频搜索、播放、授权下载 | 官方 Action API 与固定媒体 Host；许可以来源页为准 |
+| YouTube Music | conditional | 官方搜索与元数据；播放/歌词/下载禁用 | 仅设置服务端 API Key 时启用；固定一页以限制配额，不抽取媒体 |
 | demo | frontend fallback | 静态演示 | 使用公开演示音频，不属于后端 Provider |
 
 QQ、酷狗等平台目前只做本地地址/ID 识别，没有生产搜索 Provider。这种能力边界必须保留，不能根据参考项目的旧私有接口擅自启用。
@@ -53,7 +56,7 @@ QQ、酷狗等平台目前只做本地地址/ID 识别，没有生产搜索 Prov
 3. 搜索、详情和歌词使用有界进程内缓存；完整故障使用短期负缓存，播放临时地址不持久化。
 4. Provider 健康状态、来源级错误、API 限流、结构化请求日志和敏感信息脱敏已统一。
 5. 本地开发由 `server/dev.mjs` 同时启动 API 与 Vite，前端通过同源代理消费 Apple 与 MusicBrainz 聚合结果；Pages 和无 Node API 的生产构建使用独立公共 Apple 适配器。公共适配器同样限制 Host、流式响应大小、超时，并只对网络错误、429、502、503、504 做一次可取消退避重试。
-6. 当前仍无数据库、共享缓存和分布式限流；多实例生产环境需要外部基础设施。QQ、酷狗等没有已确认官方接口的来源仍只做本地地址识别，不宣称可搜索或播放。
+6. 当前使用单机 SQLite，仍无共享缓存和分布式限流；多实例生产环境需要外部基础设施。QQ、酷狗等没有已确认官方接口的来源仍只做本地地址识别，不宣称可搜索或播放。
 7. 仓库仍缺少根 `LICENSE`；发布者必须先确定项目许可证。参考项目只做 clean-room 架构研究，没有复制其代码。
 
 实现保持现有 UI、Track 和 `/api/*` 契约，并增量提供安全公共层与 `/api/music/*` 版本化路由，不引入 PHP 或不必要的运行时依赖。

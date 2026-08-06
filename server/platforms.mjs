@@ -4,6 +4,8 @@ const kugouHash = /^[a-fA-F0-9]{32}$/
 const qingtingId = /^\d+\|\d+$/
 const musicBrainzId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 const audiusId = /^[A-Za-z0-9_-]{1,128}$/
+const youtubeId = /^[A-Za-z0-9_-]{11}$/
+const domainAddress = /^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?::\d{1,5})?(?:[/?#].*)?$/i
 
 const matchPath = (url, pattern) => pattern.exec(url.pathname)?.[1]
 const queryValue = (url, name) => url.searchParams.get(name) ?? new URLSearchParams(
@@ -12,10 +14,23 @@ const queryValue = (url, name) => url.searchParams.get(name) ?? new URLSearchPar
 const fragmentValue = (url, name) => new URLSearchParams(
   url.hash.includes('?') ? url.hash.slice(url.hash.indexOf('?') + 1) : '',
 ).get(name)
-const isNeteaseTrackRoute = (url) => /^\/song\/?$/i.test(url.pathname)
+const sourcePathUrl = (host, url) => `https://${host}${url.pathname}`
+const isNeteaseTrackRoute = (url) => /^\/(?:m\/)?song\/?$/i.test(url.pathname)
   || /^\/song\/media\/outer\/url\/?$/i.test(url.pathname)
 const isNeteaseHashTrackRoute = (url) => /^\/?$/i.test(url.pathname)
-  && /^#\/song(?:\?|$)/i.test(url.hash)
+  && /^#\/(?:m\/)?song(?:\?|$)/i.test(url.hash)
+const sharedUrls = (value) => [...value.matchAll(/https?:\/\/[^\s<>"'，。！？；、]+/giu)]
+  .map(([url]) => url.replace(/[.,!?;:，。！？；、）】}]+$/u, ''))
+
+const parseMusicUrl = (value) => {
+  try {
+    const direct = new URL(value)
+    if (['http:', 'https:'].includes(direct.protocol)) return direct
+  } catch { /* Try a scheme-less address or copied share text. */ }
+  const candidates = domainAddress.test(value) ? [`https://${value}`] : sharedUrls(value)
+  if (candidates.length !== 1) return null
+  try { return new URL(candidates[0]) } catch { return null }
+}
 
 const definitions = [
   {
@@ -34,8 +49,12 @@ const definitions = [
     source: 'qq',
     hosts: ['y.qq.com'],
     validate: (id) => alphaNumeric.test(id),
-    match: (url) => matchPath(url, /^\/n\/yqq\/song\/([A-Za-z0-9_-]+)(?:\.html)?\/?$/i),
-    canonical: (id) => `https://y.qq.com/n/yqq/song/${id}.html`,
+    match: (url) => matchPath(url, /^\/n\/yqq\/song\/([A-Za-z0-9_-]+)(?:\.html)?\/?$/i)
+      ?? matchPath(url, /^\/n\/ryqq\/songDetail\/([A-Za-z0-9_-]+)\/?$/i)
+      ?? (/^\/v8\/playsong\.html$/i.test(url.pathname) ? queryValue(url, 'songmid') : undefined),
+    canonical: (id, url) => url && /^\/n\/ryqq\/songDetail\//i.test(url.pathname)
+      ? `https://y.qq.com/n/ryqq/songDetail/${id}`
+      : `https://y.qq.com/n/yqq/song/${id}.html`,
   },
   {
     source: 'kugou',
@@ -49,7 +68,7 @@ const definitions = [
     source: 'kuwo',
     hosts: ['kuwo.cn'],
     validate: (id) => numeric.test(id),
-    match: (url) => matchPath(url, /^\/play_detail\/(\d+)\/?$/i),
+    match: (url) => matchPath(url, /^\/(?:newh5app\/)?play_detail\/(\d+)\/?$/i),
     canonical: (id) => `https://www.kuwo.cn/play_detail/${id}/`,
   },
   {
@@ -64,13 +83,16 @@ const definitions = [
     hosts: ['1ting.com'],
     validate: (id) => numeric.test(id),
     match: (url) => matchPath(url, /^\/(?:.*\/)?player_(\d+)\.html$/i),
-    canonical: (id) => `https://www.1ting.com/player/player_${id}.html`,
+    canonical: (id, url) => url
+      ? sourcePathUrl('www.1ting.com', url)
+      : `https://www.1ting.com/player/player_${id}.html`,
   },
   {
     source: 'migu',
-    hosts: ['music.migu.cn'],
+    hosts: ['music.migu.cn', 'h5.nf.migu.cn'],
     validate: (id) => alphaNumeric.test(id),
-    match: (url) => matchPath(url, /^\/v3\/music\/song\/([A-Za-z0-9_-]+)\/?$/i),
+    match: (url) => matchPath(url, /^\/v3\/music\/song\/([A-Za-z0-9_-]+)\/?$/i)
+      ?? (/^\/app\/v4\/p\/share\/song\/index\.html$/i.test(url.pathname) ? queryValue(url, 'id') : undefined),
     canonical: (id) => `https://music.migu.cn/v3/music/song/${id}`,
   },
   {
@@ -78,7 +100,9 @@ const definitions = [
     hosts: ['lizhi.fm'],
     validate: (id) => numeric.test(id),
     match: (url) => matchPath(url, /^\/\d+\/(\d+)\/?$/i),
-    canonical: (id) => `https://www.lizhi.fm/0/${id}`,
+    canonical: (id, url) => url
+      ? sourcePathUrl('www.lizhi.fm', url)
+      : `https://www.lizhi.fm/0/${id}`,
   },
   {
     source: 'qingting',
@@ -98,7 +122,9 @@ const definitions = [
     hosts: ['ximalaya.com'],
     validate: (id) => numeric.test(id),
     match: (url) => matchPath(url, /^(?:\/[^/]+)*\/sound\/(\d+)\/?$/i),
-    canonical: (id) => `https://www.ximalaya.com/sound/${id}`,
+    canonical: (id, url) => url
+      ? sourcePathUrl('www.ximalaya.com', url)
+      : `https://www.ximalaya.com/sound/${id}`,
   },
   {
     source: '5sing-original',
@@ -118,8 +144,22 @@ const definitions = [
     source: 'qmkg',
     hosts: ['kg.qq.com'],
     validate: (id) => alphaNumeric.test(id),
-    match: (url) => /^\/node\/play\/?$/i.test(url.pathname) ? queryValue(url, 's') : undefined,
+    match: (url) => /^\/(?:node\/)?play\/?$/i.test(url.pathname) ? queryValue(url, 's') : undefined,
     canonical: (id) => `https://kg.qq.com/node/play?s=${id}`,
+  },
+  {
+    source: 'youtube',
+    hosts: ['youtube.com', 'youtu.be'],
+    validate: (id) => youtubeId.test(id),
+    match: (url) => {
+      const hostname = url.hostname.toLocaleLowerCase()
+      if (hostname === 'youtu.be' || hostname.endsWith('.youtu.be')) {
+        return matchPath(url, /^\/([A-Za-z0-9_-]{11})\/?$/)
+      }
+      if (/^\/watch\/?$/i.test(url.pathname)) return url.searchParams.get('v') ?? undefined
+      return matchPath(url, /^\/(?:shorts|embed)\/([A-Za-z0-9_-]{11})\/?$/i)
+    },
+    canonical: (id) => `https://music.youtube.com/watch?v=${id}`,
   },
   {
     source: 'apple',
@@ -165,13 +205,8 @@ export const identifyMusicInput = (input, preferredSource) => {
     return { source: definition.source, id, canonicalUrl: definition.canonical(id) }
   }
 
-  let parsedUrl
-  try {
-    parsedUrl = new URL(value)
-  } catch {
-    return null
-  }
-  if (!['http:', 'https:'].includes(parsedUrl.protocol)) return null
+  const parsedUrl = parseMusicUrl(value)
+  if (!parsedUrl || !['http:', 'https:'].includes(parsedUrl.protocol) || parsedUrl.username || parsedUrl.password) return null
 
   for (const definition of definitions) {
     const hostname = parsedUrl.hostname.toLocaleLowerCase()
@@ -179,7 +214,7 @@ export const identifyMusicInput = (input, preferredSource) => {
     const matchedId = definition.match(parsedUrl)
     if (matchedId && definition.validate(matchedId)) {
       const id = definition.normalize?.(matchedId) ?? matchedId
-      return { source: definition.source, id, canonicalUrl: definition.canonical(id) }
+      return { source: definition.source, id, canonicalUrl: definition.canonical(id, parsedUrl) }
     }
   }
   return null

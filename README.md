@@ -2,7 +2,7 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、相似推荐、本地音乐、播放队列、账号同步、离线应用壳和按来源授权的歌词与下载能力。
 
-当前版本：`0.6.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.7.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
@@ -31,13 +31,13 @@ Node 服务首次启动会自动创建 `data/listener.sqlite`，该目录已忽�
 
 ## GitHub Pages
 
-推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 无法运行 Node API，因此直接使用无需密钥且支持浏览器跨域请求的 Apple Music 公共检索、地址/ID 解析与试听；公共响应受 2 MB 上限及媒体 Host 白名单约束，瞬时故障会重试一次，CN 无结果会补查 US，网络持续异常才退回演示曲库。静态版本保留本机存储、JSON 迁移、PWA 应用壳和封面导出，但不提供账号云同步或服务端音频下载。
+推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 无法运行 Node API 或安全保存 YouTube API Key，因此直接使用无需密钥且支持浏览器跨域请求的 Apple Music 公共检索、地址/ID 解析与试听；公共响应受 2 MB 上限及媒体 Host 白名单约束，瞬时故障会重试一次，CN 无结果会补查 US，网络持续异常才退回演示曲库。静态版本保留本机存储、JSON 迁移、PWA 应用壳和封面导出，但不提供 YouTube 名称搜索、账号云同步或服务端音频下载。
 
 仓库的 **Settings → Pages → Build and deployment → Source** 必须选择 **GitHub Actions**。如果选择从 `main` 分支发布，GitHub 会在 Actions 部署后再次用源码覆盖站点，导致 `/src/main.tsx` 和 `/favicon.svg` 404；部署后的线上冒烟检查会将这种错误配置标记为失败。
 
 ## 接入音乐源
 
-页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和授权试听，通过 `server/providers/musicbrainz.mjs` 补充 CC0 录音元数据，通过 `server/providers/wikimedia.mjs` 搜索 Wikimedia Commons 开放音频，并通过 `server/providers/netease.mjs` 补充网易云公开目录元数据和 ID 详情；没有合法播放地址的元数据会保留并明确标记为不可播放。Audius 配置 Key 后可提供创作者公开音频。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
+页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和授权试听，通过 `server/providers/musicbrainz.mjs` 补充 CC0 录音元数据，通过 `server/providers/wikimedia.mjs` 搜索 Wikimedia Commons 开放音频，并通过 `server/providers/netease.mjs` 补充网易云公开目录元数据和 ID 详情；配置官方 Key 后，`server/providers/youtube.mjs` 使用 YouTube Data API v3 搜索音乐类视频并补全标题、创作者、时长和官方缩略图。没有合法播放地址的元数据会保留并明确标记为不可播放。Audius 配置 Key 后可提供创作者公开音频。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
 
 Node 聚合模式默认使用“完整与元数据”播放范围：隐藏 Apple 试听结果，保留 Wikimedia/Audius 完整音频和网易云/MusicBrainz 目录元数据；可切换为“仅完整可播”或“包含试听”。GitHub Pages 只有浏览器可直连的 Apple 公共接口，因此默认保留试听结果。
 
@@ -45,7 +45,7 @@ Node 聚合模式默认使用“完整与元数据”播放范围：隐藏 Apple
 
 打开自建歌单后会根据主要歌手或专辑自动展示最多 8 首真实相似结果；“显示更多/加载更多”和连续播放会继续请求 Provider 分页。推荐不写入本地存储，不使用演示或 Fixture 歌曲，并排除试听；连续队列只自动追加 Provider 明确授权为完整播放的音源，没有合法完整音源时只保留元数据说明或循环已有可播放队列。
 
-地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、Apple Music、MusicBrainz、Audius API 和 Wikimedia Commons 文件页地址/ID。解析只识别格式，不代表对应平台已经获得搜索、播放或下载授权；健康接口会返回当前实际连接的来源和能力。
+地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、YouTube Music、Apple Music、MusicBrainz、Audius API 和 Wikimedia Commons 文件页地址/ID，并兼容已验证的新版、移动端、无协议地址及只含一个链接的分享文案。YouTube 支持 `music.youtube.com/watch`、`youtube.com/watch`、`shorts`、`embed`、`youtu.be` 和 11 位视频 ID。含多个链接的输入会因歧义被拒绝；全民 K 歌仅支持 ID/地址解析，不支持名称搜索。解析只识别格式，不代表对应平台已经获得搜索、播放或下载授权；健康接口会返回当前实际连接的来源和能力。
 
 开发模式未配置 `VITE_MUSIC_API_BASE` 时通过 Vite 的同源 `/api` 代理连接本地聚合服务；生产构建未配置时直接使用 Apple 公共搜索，不会探测不存在的 `/api`。跨域部署 Node API 时，将 `VITE_MUSIC_API_BASE` 设置为实际 API Origin。
 
@@ -93,6 +93,12 @@ Audius 只开放官方 API 明确标记为可串流且未设置访问门槛的�
 AUDIUS_API_KEY=你的开发者Key npm run server
 ```
 
+YouTube Music 使用官方 YouTube Data API v3，只返回公开且处理完成的视频元数据、来源页和官方缩略图。项目不抽取、代理或下载 YouTube 音视频，也不绕过广告、登录、会员、地区或 DRM；`search.list` 每次调用消耗 100 配额单位，因此固定只搜索第一页、每次最多 50 条并使用聚合缓存。主页流行卡片使用 Apple 目录且离开主页会取消未完成请求，不会在后台消耗 YouTube 搜索配额；用户主动执行的多平台搜索仍包含已配置的 YouTube Provider。先在 Google Cloud 启用 YouTube Data API v3，再把受限 Key 注入服务端：
+
+```bash
+YOUTUBE_API_KEY=你的服务端Key npm run server
+```
+
 网易云公开 Web 端点未提供稳定性承诺，并且在部分区域可能返回加密结果，因此只作为默认启用的实验性元数据源。它支持关键词搜索与数字 ID 详情，但不伪造签名、不解密、不构造播放地址；可显式关闭：
 
 ```bash
@@ -131,3 +137,4 @@ npm test
 - [MediaWiki Action API](https://www.mediawiki.org/wiki/API:Main_page) 与 [Wikimedia Commons 许可说明](https://commons.wikimedia.org/wiki/Commons:Licensing)：只检索公开音频，具体内容许可与署名要求以文件来源页为准。
 - [musicbrainz-api](https://github.com/Borewit/musicbrainz-api)（MIT）：参考应用标识、MBID lookup 与限流思路；本项目未复制其实现或引入该依赖。
 - [Audius API / SDK](https://github.com/audiusproject/apps/tree/main/packages/docs/docs/pages/sdk)（Apache-2.0）：参考官方搜索、Track 权限字段、流地址解析与 10 请求/秒限制；软件许可不代表音乐内容可下载或再分发。
+- [YouTube Data API v3](https://developers.google.com/youtube/v3/docs) 与 [配额成本](https://developers.google.com/youtube/v3/determine_quota_cost)：仅使用官方搜索与视频详情元数据接口；不获取媒体流。

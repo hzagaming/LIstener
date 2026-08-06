@@ -2,6 +2,7 @@ const sourceHosts = {
   apple: ['mzstatic.com'],
   netease: ['music.126.net'],
   audius: ['audius.co'],
+  youtube: ['ytimg.com'],
 }
 const extensions = new Map([
   ['image/jpeg', 'jpg'],

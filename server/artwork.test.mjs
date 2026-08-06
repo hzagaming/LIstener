@@ -22,6 +22,23 @@ test('downloads bounded artwork only from source-specific trusted hosts', async 
   assert.deepEqual([...result.bytes], [1, 2, 3])
 })
 
+test('downloads YouTube thumbnails only from the official image host', async () => {
+  const calls = []
+  const download = createArtworkDownloader({
+    fetchImpl: async (url) => {
+      calls.push(String(url))
+      return new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/jpeg' } })
+    },
+  })
+
+  await download({ source: 'youtube', url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg', title: 'Video' })
+  assert.deepEqual(calls, ['https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg'])
+  await assert.rejects(
+    download({ source: 'youtube', url: 'https://evil.example/cover.jpg', title: 'Video' }),
+    /not allowed/,
+  )
+})
+
 test('rejects SSRF targets, non-images, redirects to untrusted hosts, and oversized artwork', async () => {
   const download = createArtworkDownloader({
     maxBytes: 3,

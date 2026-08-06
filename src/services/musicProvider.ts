@@ -24,6 +24,7 @@ const labels: Record<MusicSource, string> = {
   '5sing-original': '5sing 原创',
   '5sing-cover': '5sing 翻唱',
   qmkg: '全民 K 歌',
+  youtube: 'YouTube Music',
   apple: 'Apple Music',
   musicbrainz: 'MusicBrainz',
   audius: 'Audius',

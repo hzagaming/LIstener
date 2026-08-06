@@ -17,11 +17,23 @@ const cases = [
   ['http://5sing.kugou.com/yc/3082899.html', '5sing-original', '3082899'],
   ['http://5sing.kugou.com/fc/14369766.html', '5sing-cover', '14369766'],
   ['https://kg.qq.com/node/play?s=abc_123', 'qmkg', 'abc_123'],
+  ['https://music.youtube.com/watch?v=dQw4w9WgXcQ', 'youtube', 'dQw4w9WgXcQ'],
   ['https://music.apple.com/cn/album/example/123?i=456', 'apple', '456'],
   ['https://musicbrainz.org/recording/026FA041-3917-4C73-9079-ED16E36F20F8', 'musicbrainz', '026fa041-3917-4c73-9079-ed16e36f20f8'],
   ['https://api.audius.co/v1/tracks/D7KyD', 'audius', 'D7KyD'],
   ['https://commons.wikimedia.org/wiki/File:Example.ogg?curid=57480', 'wikimedia', '57480'],
   ['https://commons.wikimedia.org/?curid=57480', 'wikimedia', '57480'],
+]
+
+const shareCases = [
+  ['https://music.163.com/m/song?id=25906124&utm_source=share', 'netease', '25906124'],
+  ['https://y.qq.com/n/ryqq/songDetail/002B2EAA3brD5b', 'qq', '002B2EAA3brD5b'],
+  ['https://i.y.qq.com/v8/playsong.html?songmid=002B2EAA3brD5b', 'qq', '002B2EAA3brD5b'],
+  ['https://m.kuwo.cn/newh5app/play_detail/175264544', 'kuwo', '175264544'],
+  ['https://h5.nf.migu.cn/app/v4/p/share/song/index.html?id=477803', 'migu', '477803'],
+  ['https://node.kg.qq.com/play?s=abc_123', 'qmkg', 'abc_123'],
+  ['https://www.youtube.com/shorts/dQw4w9WgXcQ', 'youtube', 'dQw4w9WgXcQ'],
+  ['https://youtu.be/dQw4w9WgXcQ?si=share', 'youtube', 'dQw4w9WgXcQ'],
 ]
 
 const rawIds = {
@@ -38,6 +50,7 @@ const rawIds = {
   '5sing-original': '3082899',
   '5sing-cover': '14369766',
   qmkg: 'abc_123',
+  youtube: 'dQw4w9WgXcQ',
   apple: '456',
   musicbrainz: '026fa041-3917-4c73-9079-ed16e36f20f8',
   audius: 'D7KyD',
@@ -51,6 +64,61 @@ test('identifies supported platform URLs without fetching them', () => {
     assert.equal(identified?.id, id, input)
     assert.match(identified?.canonicalUrl ?? '', /^https:\/\//)
   }
+})
+
+test('identifies modern mobile and share URL variants', () => {
+  for (const [input, source, id] of shareCases) {
+    const identified = identifyMusicInput(input)
+    assert.equal(identified?.source, source, input)
+    assert.equal(identified?.id, id, input)
+    assert.deepEqual(identifyMusicInput(identified?.canonicalUrl), identified, input)
+  }
+})
+
+test('accepts a known address without a scheme and rejects credential-bearing URLs', () => {
+  assert.equal(identifyMusicInput('music.163.com/#/song?id=25906124')?.id, '25906124')
+  assert.equal(identifyMusicInput('https://user:secret@music.163.com/song?id=25906124'), null)
+})
+
+test('extracts one supported URL from copied share text without guessing between links', () => {
+  const shared = '分享歌曲：晴天 https://y.qq.com/n/ryqq/songDetail/002B2EAA3brD5b。复制链接一起听'
+  assert.equal(identifyMusicInput(shared)?.id, '002B2EAA3brD5b')
+  assert.equal(identifyMusicInput(
+    'Share: https://music.163.com/song?id=25906124',
+  )?.id, '25906124')
+  assert.equal(identifyMusicInput(
+    '网易 https://music.163.com/song?id=25906124 QQ https://y.qq.com/n/ryqq/songDetail/002B2EAA3brD5b',
+  ), null)
+})
+
+test('preserves route information required by source pages', () => {
+  assert.equal(
+    identifyMusicInput('http://www.1ting.com/player/b6/player_357838.html?from=share')?.canonicalUrl,
+    'https://www.1ting.com/player/b6/player_357838.html',
+  )
+  assert.equal(
+    identifyMusicInput('https://www.lizhi.fm/1947925/2498707770886461446?source=share')?.canonicalUrl,
+    'https://www.lizhi.fm/1947925/2498707770886461446',
+  )
+  assert.equal(
+    identifyMusicInput('https://www.ximalaya.com/51701370/sound/24755731?from=share')?.canonicalUrl,
+    'https://www.ximalaya.com/51701370/sound/24755731',
+  )
+  assert.equal(
+    identifyMusicInput('https://y.qq.com/n/ryqq/songDetail/002B2EAA3brD5b?ADTAG=share')?.canonicalUrl,
+    'https://y.qq.com/n/ryqq/songDetail/002B2EAA3brD5b',
+  )
+})
+
+test('recognizes YouTube Music tracks but not playlists, channels, or malformed video IDs', () => {
+  assert.deepEqual(identifyMusicInput('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), {
+    source: 'youtube',
+    id: 'dQw4w9WgXcQ',
+    canonicalUrl: 'https://music.youtube.com/watch?v=dQw4w9WgXcQ',
+  })
+  assert.equal(identifyMusicInput('https://music.youtube.com/playlist?list=PL123'), null)
+  assert.equal(identifyMusicInput('https://www.youtube.com/@artist'), null)
+  assert.equal(identifyMusicInput('short', 'youtube'), null)
 })
 
 test('identifies source-qualified raw IDs and rejects ambiguous or malformed values', () => {
@@ -98,7 +166,7 @@ test('publishes every supported platform identifier exactly once', () => {
   assert.equal(new Set(platformSources).size, platformSources.length)
   assert.deepEqual(platformSources, [
     'netease', 'qq', 'kugou', 'kuwo', 'qianqian', '1ting', 'migu', 'lizhi',
-    'qingting', 'ximalaya', '5sing-original', '5sing-cover', 'qmkg', 'apple',
-    'musicbrainz', 'audius', 'wikimedia',
+    'qingting', 'ximalaya', '5sing-original', '5sing-cover', 'qmkg', 'youtube',
+    'apple', 'musicbrainz', 'audius', 'wikimedia',
   ])
 })

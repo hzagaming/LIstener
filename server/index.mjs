@@ -6,6 +6,7 @@ import { createAudiusProvider } from './providers/audius.mjs'
 import { createMusicBrainzProvider } from './providers/musicbrainz.mjs'
 import { createWikimediaProvider } from './providers/wikimedia.mjs'
 import { createNeteaseProvider } from './providers/netease.mjs'
+import { createYouTubeProvider } from './providers/youtube.mjs'
 import { createLocalFixtureProvider } from './providers/localFixture.mjs'
 import { readMusicConfig } from './config.mjs'
 import { createStructuredLogger } from './logger.mjs'
@@ -25,6 +26,12 @@ const providers = []
 if (selected('apple')) {
   providers.push(createAppleProvider({
     country: process.env.APPLE_COUNTRY,
+    ...providerHttp,
+  }))
+}
+if (selected('youtube') && process.env.YOUTUBE_API_KEY?.trim()) {
+  providers.push(createYouTubeProvider({
+    apiKey: process.env.YOUTUBE_API_KEY,
     ...providerHttp,
   }))
 }

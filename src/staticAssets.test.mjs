@@ -128,10 +128,12 @@ test('playlist recommendations stay derived, cancellable, and free of previews',
   assert.match(logic, /playback === 'preview'/)
 })
 
-test('the homepage loads global and regional pop searches from real providers instead of fixtures', async () => {
+test('the homepage loads global and regional pop searches from a real provider instead of fixtures', async () => {
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
 
   assert.match(app, /const queries = \['周杰伦', 'Taylor Swift', 'The Weeknd', 'Dua Lipa', 'Bruno Mars'\]/)
+  assert.match(app, /if \(view !== 'discover'\) return/)
+  assert.match(app, /const provider: MusicSource = 'apple'/)
   assert.match(app, /musicProvider\.searchPage\(query, \{ provider, pageSize: 2 \}/)
   assert.match(app, /全球流行精选/)
   assert.doesNotMatch(app, /initialTracks\.slice\(0, 4\)\.map/)

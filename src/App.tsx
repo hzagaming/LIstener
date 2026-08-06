@@ -40,6 +40,10 @@ type PlayerLayout = 'docked' | 'floating'
 type BackgroundTexture = 'none' | 'paper' | 'grid'
 type PlaylistRecommendation = { track: Track; reason: string }
 const identifiableSources: MusicSource[] = publicAppleMode ? ['apple'] : musicSources.filter((source) => !['demo', 'local', 'fixture'].includes(source))
+const sourceParsingNotes: Partial<Record<MusicSource, string>> = {
+  qmkg: '全民 K 歌仅支持 ID 或地址解析，不支持名称搜索',
+  youtube: 'YouTube Music 使用官方 Data API 搜索元数据，不抽取音视频',
+}
 const libraryValidators = { isTrack, isPlaylist }
 const projectLinks = [
   { label: 'GitHub 仓库', href: 'https://github.com/hzagaming/LIstener' },
@@ -111,6 +115,9 @@ const readStoredBoolean = (key: string, fallback: boolean) => {
 const readStoredText = (key: string, fallback: string) => {
   try { return localStorage.getItem(key) || fallback } catch { return fallback }
 }
+
+const looksLikeMusicAddress = (value: string) => /https?:\/\//i.test(value)
+  || /^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?::\d{1,5})?(?:[/?#]|$)/.test(value)
 
 const readStoredChoice = <T extends string>(key: string, choices: readonly T[], fallback: T): T => {
   const value = readStoredText(key, fallback)
@@ -879,11 +886,12 @@ function App() {
   }, [resultSources, sourceFilter])
 
   useEffect(() => {
+    if (view !== 'discover') return
     const controller = new AbortController()
     homeControllerRef.current = controller
     setHomeLoading(true)
     setHomeError(false)
-    const provider = publicAppleMode ? 'apple' : 'all'
+    const provider: MusicSource = 'apple'
     const queries = ['周杰伦', 'Taylor Swift', 'The Weeknd', 'Dua Lipa', 'Bruno Mars']
     if (regionalRecommendations) queries.push(regionalQuery(region))
     else queries.push('Ariana Grande')
@@ -921,7 +929,7 @@ function App() {
       if (homeControllerRef.current === controller) homeControllerRef.current = null
       controller.abort()
     }
-  }, [homeRevision, region, regionalRecommendations])
+  }, [homeRevision, region, regionalRecommendations, view])
 
   const loadRecommendationPage = async (playlist: Playlist, page: number, append: boolean) => {
     if (recommendationLoadingRef.current) return null
@@ -1568,10 +1576,15 @@ function App() {
     setIdentification(null)
     setIdentificationHasDetails(null)
     try {
-      const match = await musicProvider.identify(input, /^https?:\/\//i.test(input) ? undefined : identifySource, controller.signal)
+      const match = await musicProvider.identify(input, looksLikeMusicAddress(input) ? undefined : identifySource, controller.signal)
       if (requestId !== identifyRequestRef.current) return
       if (!match) return showNotice('没有识别出受支持的音乐地址或 ID')
       setIdentification(match)
+      if (!providerStatus.sources.includes(match.source)) {
+        setIdentificationHasDetails(false)
+        showNotice('已识别 ID；该来源仅支持地址 / ID 解析')
+        return
+      }
       try {
         const track = await musicProvider.lookup(match, controller.signal)
         if (requestId !== identifyRequestRef.current) return
@@ -1922,10 +1935,12 @@ function App() {
               </details>
               <div className="id-resolver">
                 <select aria-label="音乐 ID 所属平台" value={identifySource} onChange={(event) => updateIdentifySource(event.target.value as MusicSource)}>
-                  {identifiableSources.map((source) => <option key={source} value={source}>{sourceLabel(source)}</option>)}
+                  {identifiableSources.map((source) => <option key={source} value={source}>{sourceLabel(source)}{source === 'qmkg' ? '（仅地址 / ID）' : ''}</option>)}
                 </select>
                 <button className="primary-button" disabled={isIdentifying} onClick={() => void identifyInput()}>{isIdentifying ? '正在识别…' : '解析地址 / ID'}</button>
-                <span id="search-guidance">{publicAppleMode ? 'Pages 版本支持 Apple Music 地址与纯 ID。' : '平台地址与纯 ID 均需点击解析；纯 ID 请先选择平台。'}</span>
+                <span id="search-guidance">{publicAppleMode
+                  ? 'Pages 版本支持 Apple Music 地址与纯 ID。'
+                  : sourceParsingNotes[identifySource] ?? '平台地址与纯 ID 均需点击解析；纯 ID 请先选择平台。'}</span>
               </div>
               {identification && (
                 <div className="identification" role="status">
@@ -2094,18 +2109,23 @@ function App() {
                 <div className="account-panel__header"><div><span className="eyebrow">SOURCE CAPABILITIES</span><h2>音乐源能力</h2></div><Sparkles /></div>
                 <p>只展示当前部署真实返回的能力；“可解析”只代表能够识别地址或 ID，不代表获得搜索、播放或下载授权。</p>
                 <div className="provider-settings-list">
-                  {providerStatus.sources.map((source) => {
+                  {identifiableSources.map((source) => {
+                    const connected = providerStatus.sources.includes(source)
                     const capabilities = providerStatus.capabilities[source]
-                    return <div className="provider-setting" key={source}><SourceBadge track={{ ...initialTracks[0], source }} /><span>{capabilities?.search ? '搜索' : '不可搜索'} · {capabilities?.playback ? '播放' : '仅元数据'} · {capabilities?.lyrics ? '歌词' : '无歌词'} · {capabilities?.download ? '授权下载' : '不可下载'}</span></div>
+                    return <div className="provider-setting" key={source}>
+                      <div className="provider-setting__identity"><SourceBadge track={{ ...initialTracks[0], source }} /><small>{connected ? '已接入' : '仅解析'}</small></div>
+                      <span>地址 / ID 解析 · {capabilities?.search ? '名称搜索' : '不可名称搜索'} · {capabilities?.playback ? '可请求播放' : '无播放接口'} · {capabilities?.lyrics ? '歌词' : '无歌词'} · {capabilities?.download ? '授权下载' : '不可下载'}</span>
+                      {sourceParsingNotes[source] && <small className="provider-setting__note">{sourceParsingNotes[source]}</small>}
+                    </div>
                   })}
                 </div>
-                <div className="parseable-sources"><strong>当前可解析平台</strong><span>{identifiableSources.map(sourceLabel).join(' · ')}</span></div>
-                <p className="settings-note">Audius 需部署者配置服务端 API Key；会员、DRM、签名、地区限制和未授权下载不会被绕过。</p>
+                <div className="parseable-sources"><strong>{identifiableSources.length} 个平台已加入地址 / ID 解析白名单</strong><span>{identifiableSources.map(sourceLabel).join(' · ')}</span></div>
+                <p className="settings-note">YouTube Music 与 Audius 名称搜索需部署者配置服务端 API Key；会员、DRM、签名、地区限制和未授权下载不会被绕过。</p>
               </section>
 
               <section className="account-panel settings-panel settings-panel--project">
                 <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
-                <p>Listener 0.6.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <p>Listener 0.7.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
                 <div className="project-links">
                   {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
                 </div>

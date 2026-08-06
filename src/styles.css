@@ -164,7 +164,7 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .track-card__meta p { font-size: 12px; color: var(--muted); margin: 0 0 7px; }
 .track-card__meta small { display: block; margin: -3px 0 6px; color: #8d4934; font-size: 9px; font-weight: 600; }
 .source { display: inline-flex; font-size: 10px; line-height: 1; border: 1px solid; border-radius: 2px; padding: 3px 5px; color: #806c5e; }
-.source--netease { color: #9b2d30; }.source--qq { color: #68744f; }.source--kugou { color: #526f84; }.source--apple { color: #9b3f52; }.source--musicbrainz { color: #8a4f76; }.source--audius { color: #6b4db5; }.source--wikimedia { color: #735b3e; }.source--demo { color: #805f82; }
+.source--netease { color: #9b2d30; }.source--qq { color: #68744f; }.source--kugou { color: #526f84; }.source--youtube { color: #b3261e; }.source--apple { color: #9b3f52; }.source--musicbrainz { color: #8a4f76; }.source--audius { color: #6b4db5; }.source--wikimedia { color: #735b3e; }.source--demo { color: #805f82; }
 .track-card > .like-button { position: absolute; right: 0; bottom: 20px; min-width: 40px; min-height: 40px; display: grid; place-items: center; }
 .cover-download-card { position: absolute; right: 38px; bottom: 20px; width: 40px; height: 40px; border: 0; background: none; color: #77736b; display: grid; place-items: center; cursor: pointer; }
 .cover-download-card svg { width: 15px; }
@@ -374,8 +374,11 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .volume-setting input { grid-column: 1 / -1; }
 .settings-note { margin: 0 !important; padding: 11px 13px; background: var(--paper-deep); }
 .provider-settings-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.provider-setting { min-width: 0; border: 1px solid var(--line); padding: 11px; display: flex; align-items: center; gap: 10px; }
-.provider-setting > span:last-child { min-width: 0; color: var(--muted); font-size: 9px; overflow-wrap: anywhere; }
+.provider-setting { min-width: 0; border: 1px solid var(--line); padding: 11px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 10px; }
+.provider-setting__identity { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.provider-setting__identity small { color: var(--muted); font-size: 8px; }
+.provider-setting > span { min-width: 0; color: var(--muted); font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; }
+.provider-setting__note { grid-column: 1 / -1; color: var(--muted); font-size: 8px; line-height: 1.5; }
 .parseable-sources { display: flex; flex-direction: column; gap: 6px; padding-top: 3px; }
 .parseable-sources strong { font-size: 10px; }
 .parseable-sources span { color: var(--muted); font-size: 10px; line-height: 1.7; }

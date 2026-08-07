@@ -230,7 +230,7 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .search-hints { display: flex; gap: 10px; margin-top: 14px; font-size: 11px; color: #69665f; }
 .search-hints button { border: 0; background: none; padding: 0; color: #69665f; cursor: pointer; border-bottom: 1px solid #aaa59a; }
 .search-input-error { margin-top: 12px; border-left: 3px solid #b85335; background: rgba(184,83,53,.08); color: #7b3927; padding: 9px 11px; font-size: 11px; line-height: 1.5; }
-.advanced-search { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 8px; margin-top: 20px; }
+.advanced-search { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: end; gap: 8px; margin-top: 20px; }
 .advanced-search label { min-width: 0; display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 10px; }
 .advanced-search select { min-width: 0; width: 100%; min-height: 39px; border: 1px solid #bdb8ad; background: rgba(255,255,255,.25); color: var(--ink); padding: 0 28px 0 10px; }
 .advanced-search > button { min-height: 39px; border: 1px solid #bdb8ad; background: transparent; color: #625f58; padding: 0 11px; font-size: 10px; cursor: pointer; }
@@ -555,7 +555,7 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .account-heading { padding-top: 40px; }
   .account-heading h1 { font-size: 44px; }
   .identification { grid-template-columns: 1fr; gap: 8px; }
-  .advanced-search { grid-template-columns: 1fr 1fr 1fr; }
+  .advanced-search { grid-template-columns: 1fr 1fr; }
   .advanced-search > button { grid-column: 1 / -1; justify-self: start; }
   .search-explore button { min-height: 36px; }
   .section-heading { align-items: flex-start; gap: 12px; }

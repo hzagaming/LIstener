@@ -41,7 +41,7 @@ type BackgroundTexture = 'none' | 'paper' | 'grid'
 type PlaylistRecommendation = { track: Track; reason: string }
 const identifiableSources: MusicSource[] = publicAppleMode ? ['apple'] : musicSources.filter((source) => !['demo', 'local', 'fixture'].includes(source))
 const sourceParsingNotes: Partial<Record<MusicSource, string>> = {
-  qmkg: '全民 K 歌仅支持 ID 或地址解析，不支持名称搜索',
+  qmkg: '全民 K 歌原生能力仅支持 ID 或地址解析；配置公开网页目录后可检索已索引作品页',
   youtube: 'YouTube Music 使用官方 Data API 搜索元数据，不抽取音视频',
 }
 const libraryValidators = { isTrack, isPlaylist }
@@ -266,6 +266,7 @@ function App() {
   const [searchDegraded, setSearchDegraded] = useState(false)
   const [searchRevision, setSearchRevision] = useState(0)
   const [sourceFilter, setSourceFilter] = useState<'all' | MusicSource>('all')
+  const [searchSource, setSearchSource] = useState<'all' | MusicSource>('all')
   const [playbackFilter, setPlaybackFilter] = useState<PlaybackFilter>(publicAppleMode ? 'all' : 'no-preview')
   const [searchDomain, setSearchDomain] = useState<SearchDomain>('all')
   const [searchDuration, setSearchDuration] = useState<SearchDuration>('all')
@@ -655,6 +656,15 @@ function App() {
   }, [currentMediaKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const inputMode = searchInputMode(query)
+  const searchableSources = useMemo(
+    () => providerStatus.sources.filter((source) => providerStatus.capabilities[source]?.search
+      && !['demo', 'local', 'fixture'].includes(source)),
+    [providerStatus],
+  )
+
+  useEffect(() => {
+    if (searchSource !== 'all' && !searchableSources.includes(searchSource)) setSearchSource('all')
+  }, [searchSource, searchableSources])
 
   useEffect(() => {
     let active = true
@@ -680,12 +690,12 @@ function App() {
     setIsSearching(true)
     const timeout = window.setTimeout(async () => {
       try {
-        const found = await musicProvider.search(query, controller.signal)
-        if (active && requestId === searchRequestRef.current) setResults(found)
+        const found = await musicProvider.searchPage(query, { provider: searchSource }, controller.signal)
+        if (active && requestId === searchRequestRef.current) setResults(found.tracks)
       } catch (error) {
         const fallback = searchFallbackTracks<Track>(error)
-        if (fallback && active && requestId === searchRequestRef.current) {
-          setResults(fallback)
+        if (active && requestId === searchRequestRef.current) {
+          if (fallback) setResults(fallback)
           setSearchDegraded(true)
         }
       } finally {
@@ -699,7 +709,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [query, searchRevision])
+  }, [query, searchRevision, searchSource])
 
   const currentKey = trackKey(current)
   const currentIndex = useMemo(() => queue.findIndex((track) => trackKey(track) === currentKey), [queue, currentKey])
@@ -720,6 +730,7 @@ function App() {
   const hiddenByFilters = sourceResults.length - displayResults.length
   const resultSources = useMemo(() => [...new Set(results.map((track) => track.source))], [results])
   const publicSearchFallback = searchDegraded && resultSources.includes('apple')
+  const demoSearchFallback = searchDegraded && resultSources.some((source) => ['demo', 'fixture'].includes(source))
   const likedTracks = useMemo(() => [...liked.values()], [liked])
   const portableLibrary = useMemo(() => normalizeLibraryData({
     version: 1,
@@ -1924,10 +1935,11 @@ function App() {
               <div className="search-hints"><span>试试：</span>{['周杰伦', 'Taylor Swift', '晴天'].map((word) => <button key={word} onClick={() => updateQuery(word)}>{word}</button>)}</div>
               {inputMode === 'too-long' && <div id="search-input-error" className="search-input-error" role="alert">搜索关键词最多 100 个字符；如果粘贴的是音乐地址，请保留完整的 http:// 或 https:// 前缀。</div>}
               <div className="advanced-search" aria-label="高级搜索筛选">
+                <label>搜索平台<select aria-label="搜索音乐源" value={searchSource} onChange={(event) => { setSearchSource(event.target.value as 'all' | MusicSource); setSourceFilter('all') }}><option value="all">全部已接入平台</option>{searchableSources.map((source) => <option key={source} value={source}>{sourceLabel(source)}</option>)}</select></label>
                 <label>搜索字段<select value={searchDomain} onChange={(event) => setSearchDomain(event.target.value as SearchDomain)}><option value="all">全部字段</option><option value="title">歌曲名</option><option value="artist">歌手</option><option value="album">专辑</option></select></label>
                 <label>时长范围<select value={searchDuration} onChange={(event) => setSearchDuration(event.target.value as SearchDuration)}><option value="all">全部时长</option><option value="short">3 分钟内</option><option value="medium">3–5 分钟</option><option value="long">5 分钟以上</option></select></label>
                 <label>结果排序<select value={searchSort} onChange={(event) => setSearchSort(event.target.value as SearchSort)}><option value="relevance">相关度</option><option value="title">歌曲名</option><option value="artist">歌手</option><option value="duration">时长</option></select></label>
-                {(searchDomain !== 'all' || searchDuration !== 'all' || searchSort !== 'relevance') && <button onClick={() => { setSearchDomain('all'); setSearchDuration('all'); setSearchSort('relevance') }}>清除筛选</button>}
+                {(searchSource !== 'all' || searchDomain !== 'all' || searchDuration !== 'all' || searchSort !== 'relevance') && <button onClick={() => { setSearchSource('all'); setSearchDomain('all'); setSearchDuration('all'); setSearchSort('relevance') }}>清除筛选</button>}
               </div>
               <details className="search-explore" open>
                 <summary>探索更多音乐领域</summary>
@@ -1963,8 +1975,8 @@ function App() {
               </div>
             </div>
             <section className="results-section">
-              {searchDegraded && <div className="search-warning" role="alert"><Sparkles /><span><strong>{publicSearchFallback ? '聚合服务离线，已切换公共搜索' : '聚合服务异常，当前为演示结果'}</strong><small>{publicSearchFallback ? '当前由 Apple Music 公共接口提供结果。' : '真实音乐源暂时不可用，请稍后重试。'}</small></span><button onClick={() => setSearchRevision((value) => value + 1)}>重试</button></div>}
-              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索结果 ${displayResults.length} 首` : searchDegraded ? `演示结果 ${displayResults.length} 首` : `共 ${displayResults.length} 首${hiddenByFilters ? ` · 已过滤 ${hiddenByFilters} 首` : ''}`}</span></div>
+              {searchDegraded && <div className="search-warning" role="alert"><Sparkles /><span><strong>{publicSearchFallback ? '聚合服务离线，已切换公共搜索' : demoSearchFallback ? '聚合服务异常，当前为演示结果' : '所选音乐源暂不可用'}</strong><small>{publicSearchFallback ? '当前由 Apple Music 公共接口提供结果。' : demoSearchFallback ? '真实音乐源暂时不可用，以下为演示数据。' : '没有返回回退数据，请检查服务配置后重试。'}</small></span><button onClick={() => setSearchRevision((value) => value + 1)}>重试</button></div>}
+              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索结果 ${displayResults.length} 首` : demoSearchFallback ? `演示结果 ${displayResults.length} 首` : searchDegraded ? '搜索失败' : `共 ${displayResults.length} 首${hiddenByFilters ? ` · 已过滤 ${hiddenByFilters} 首` : ''}`}</span></div>
               <div className="track-list" role="list">
                 {displayResults.length ? displayResults.map((track, index) => (
                   <TrackRow
@@ -2120,12 +2132,12 @@ function App() {
                   })}
                 </div>
                 <div className="parseable-sources"><strong>{identifiableSources.length} 个平台已加入地址 / ID 解析白名单</strong><span>{identifiableSources.map(sourceLabel).join(' · ')}</span></div>
-                <p className="settings-note">YouTube Music 与 Audius 名称搜索需部署者配置服务端 API Key；会员、DRM、签名、地区限制和未授权下载不会被绕过。</p>
+                <p className="settings-note">YouTube Music、Audius 与其余平台公开网页目录搜索需部署者配置对应服务端 API Key；会员、DRM、签名、地区限制和未授权下载不会被绕过。</p>
               </section>
 
               <section className="account-panel settings-panel settings-panel--project">
                 <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
-                <p>Listener 0.7.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <p>Listener 0.8.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
                 <div className="project-links">
                   {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
                 </div>

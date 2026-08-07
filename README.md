@@ -2,7 +2,7 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、相似推荐、本地音乐、播放队列、账号同步、离线应用壳和按来源授权的歌词与下载能力。
 
-当前版本：`0.7.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.8.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
@@ -31,21 +31,23 @@ Node 服务首次启动会自动创建 `data/listener.sqlite`，该目录已忽�
 
 ## GitHub Pages
 
-推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 无法运行 Node API 或安全保存 YouTube API Key，因此直接使用无需密钥且支持浏览器跨域请求的 Apple Music 公共检索、地址/ID 解析与试听；公共响应受 2 MB 上限及媒体 Host 白名单约束，瞬时故障会重试一次，CN 无结果会补查 US，网络持续异常才退回演示曲库。静态版本保留本机存储、JSON 迁移、PWA 应用壳和封面导出，但不提供 YouTube 名称搜索、账号云同步或服务端音频下载。
+推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 本身无法运行 Node API 或安全保存 Provider Key；要启用聚合搜索，请先部署本仓库的 Node 服务，然后在仓库 **Settings → Secrets and variables → Actions → Variables** 新建 `MUSIC_API_BASE_URL`，值为服务端 HTTPS Origin（例如 `https://listener-api.example.com`）。工作流会把它注入 `VITE_MUSIC_API_BASE`，线上页面随即连接服务端已启用的全部 Provider；服务端同时需要设置 `CORS_ORIGIN=https://hzagaming.github.io`，YouTube Music、Audius 与公开网页目录搜索还需各自的服务端 Key。
+
+未配置 `MUSIC_API_BASE_URL` 或聚合服务暂时不可用时，页面会安全回退到无需密钥且支持浏览器跨域请求的 Apple Music 公共检索，不会向 Pages 上不存在的 `/api` 发请求。配置 `BRAVE_SEARCH_API_KEY` 后，QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 和全民 K 歌会通过 Brave 官方 Web Search API 检索公开曲目页面；只有能被本项目地址/ID白名单再次验证的页面才会返回。
 
 仓库的 **Settings → Pages → Build and deployment → Source** 必须选择 **GitHub Actions**。如果选择从 `main` 分支发布，GitHub 会在 Actions 部署后再次用源码覆盖站点，导致 `/src/main.tsx` 和 `/favicon.svg` 404；部署后的线上冒烟检查会将这种错误配置标记为失败。
 
 ## 接入音乐源
 
-页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和授权试听，通过 `server/providers/musicbrainz.mjs` 补充 CC0 录音元数据，通过 `server/providers/wikimedia.mjs` 搜索 Wikimedia Commons 开放音频，并通过 `server/providers/netease.mjs` 补充网易云公开目录元数据和 ID 详情；配置官方 Key 后，`server/providers/youtube.mjs` 使用 YouTube Data API v3 搜索音乐类视频并补全标题、创作者、时长和官方缩略图。没有合法播放地址的元数据会保留并明确标记为不可播放。Audius 配置 Key 后可提供创作者公开音频。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
+页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和授权试听，通过 `server/providers/musicbrainz.mjs` 补充 CC0 录音元数据，通过 `server/providers/wikimedia.mjs` 搜索 Wikimedia Commons 开放音频，并通过 `server/providers/netease.mjs` 补充网易云公开目录元数据和 ID 详情；配置官方 Key 后，`server/providers/youtube.mjs` 使用 YouTube Data API v3 搜索音乐类视频，`server/providers/webCatalog.mjs` 使用 Brave 官方搜索索引覆盖其余平台公开曲目页。没有合法播放地址的元数据会保留并明确标记为不可播放。Audius 配置 Key 后可提供创作者公开音频。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
 
-Node 聚合模式默认使用“完整与元数据”播放范围：隐藏 Apple 试听结果，保留 Wikimedia/Audius 完整音频和网易云/MusicBrainz 目录元数据；可切换为“仅完整可播”或“包含试听”。GitHub Pages 只有浏览器可直连的 Apple 公共接口，因此默认保留试听结果。
+Node 聚合模式默认使用“完整与元数据”播放范围：隐藏 Apple 试听结果，保留 Wikimedia/Audius 完整音频和网易云/MusicBrainz 目录元数据；可切换为“仅完整可播”或“包含试听”。未配置聚合 API 的 GitHub Pages 只有浏览器可直连的 Apple 公共接口，因此默认保留试听结果。
 
-搜索结果可继续按歌曲名、歌手或专辑字段过滤，限制为 3 分钟内、3–5 分钟或 5 分钟以上，并按相关度、歌曲名、歌手或时长排序。流派、场景、年代和地区入口会提交可见的普通搜索词，结果仍全部来自真实 Provider，不在浏览器内生成歌曲。
+搜索前可以选择全部已接入平台或指定单一平台；结果可继续按歌曲名、歌手或专辑字段过滤，限制为 3 分钟内、3–5 分钟或 5 分钟以上，并按相关度、歌曲名、歌手或时长排序。流派、场景、年代和地区入口会提交可见的普通搜索词，结果仍全部来自真实 Provider，不在浏览器内生成歌曲。
 
 打开自建歌单后会根据主要歌手或专辑自动展示最多 8 首真实相似结果；“显示更多/加载更多”和连续播放会继续请求 Provider 分页。推荐不写入本地存储，不使用演示或 Fixture 歌曲，并排除试听；连续队列只自动追加 Provider 明确授权为完整播放的音源，没有合法完整音源时只保留元数据说明或循环已有可播放队列。
 
-地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、YouTube Music、Apple Music、MusicBrainz、Audius API 和 Wikimedia Commons 文件页地址/ID，并兼容已验证的新版、移动端、无协议地址及只含一个链接的分享文案。YouTube 支持 `music.youtube.com/watch`、`youtube.com/watch`、`shorts`、`embed`、`youtu.be` 和 11 位视频 ID。含多个链接的输入会因歧义被拒绝；全民 K 歌仅支持 ID/地址解析，不支持名称搜索。解析只识别格式，不代表对应平台已经获得搜索、播放或下载授权；健康接口会返回当前实际连接的来源和能力。
+地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、YouTube Music、Apple Music、MusicBrainz、Audius API 和 Wikimedia Commons 文件页地址/ID，并兼容已验证的新版、移动端、无协议地址及只含一个链接的分享文案。YouTube 支持 `music.youtube.com/watch`、`youtube.com/watch`、`shorts`、`embed`、`youtu.be` 和 11 位视频 ID。含多个链接的输入会因歧义被拒绝；全民 K 歌没有原生名称搜索接口，配置公开网页目录后可检索已被索引且通过白名单验证的作品页。解析只识别格式，不代表对应平台已经获得播放或下载授权；健康接口会返回当前实际连接的来源和能力。
 
 开发模式未配置 `VITE_MUSIC_API_BASE` 时通过 Vite 的同源 `/api` 代理连接本地聚合服务；生产构建未配置时直接使用 Apple 公共搜索，不会探测不存在的 `/api`。跨域部署 Node API 时，将 `VITE_MUSIC_API_BASE` 设置为实际 API Origin。
 
@@ -97,6 +99,12 @@ YouTube Music 使用官方 YouTube Data API v3，只返回公开且处理完成�
 
 ```bash
 YOUTUBE_API_KEY=你的服务端Key npm run server
+```
+
+其余平台通过 Brave 官方 Web Search API 检索公开曲目页面。查询使用固定官方搜索 Host 和 `site:` 域名范围；第三方结果必须再次通过平台地址/ID解析白名单，且只标记为不可播放、不可下载的公开元数据。Key 只放在服务端：
+
+```bash
+BRAVE_SEARCH_API_KEY=你的服务端Key npm run server
 ```
 
 网易云公开 Web 端点未提供稳定性承诺，并且在部分区域可能返回加密结果，因此只作为默认启用的实验性元数据源。它支持关键词搜索与数字 ID 详情，但不伪造签名、不解密、不构造播放地址；可显式关闭：

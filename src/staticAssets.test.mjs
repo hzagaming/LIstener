@@ -23,13 +23,14 @@ test('the production build targets the GitHub Pages project path', async () => {
   assert.equal(preview?.config.base, '/LIstener/')
 })
 
-test('GitHub Pages deploys public search without probing an unavailable Node API', async () => {
+test('GitHub Pages enables aggregate search when its API repository variable is configured', async () => {
   const workflow = await readFile(new URL('../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8')
   const provider = await readFile(new URL('./services/musicProvider.ts', import.meta.url), 'utf8')
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
 
   assert.match(workflow, /path:\s*\.\/dist/)
-  assert.match(workflow, /VITE_PUBLIC_APPLE:\s*['"]true['"]/)
+  assert.match(workflow, /VITE_MUSIC_API_BASE:\s*\$\{\{\s*vars\.MUSIC_API_BASE_URL\s*\}\}/)
+  assert.doesNotMatch(workflow, /VITE_PUBLIC_APPLE:\s*['"]true['"]/)
   assert.doesNotMatch(workflow, /VITE_STATIC_DEMO/)
   assert.match(provider, /const publicAppleProvider = createPublicAppleProvider\(\{ fallback: demoProvider \}\)/)
   assert.match(provider, /export const publicAppleMode = import\.meta\.env\.VITE_PUBLIC_APPLE === 'true' \|\| !apiBase/)
@@ -188,9 +189,21 @@ test('degraded searches distinguish public results and expose an explicit retry'
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
 
   assert.match(app, /const \[searchRevision, setSearchRevision\] = useState\(0\)/)
-  assert.match(app, /}, \[query, searchRevision\]\)/)
+  assert.match(app, /}, \[query, searchRevision, searchSource\]\)/)
   assert.match(app, /聚合服务离线，已切换公共搜索/)
+  assert.match(app, /所选音乐源暂不可用/)
+  assert.match(app, /const demoSearchFallback = searchDegraded && resultSources\.some/)
   assert.match(app, /onClick=\{\(\) => setSearchRevision\(\(value\) => value \+ 1\)\}/)
+})
+
+test('search can target every currently connected provider before results load', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+
+  assert.match(app, /const \[searchSource, setSearchSource\] = useState<'all' \| MusicSource>\('all'\)/)
+  assert.match(app, /providerStatus\.sources\.filter\(\(source\) => providerStatus\.capabilities\[source\]\?\.search/)
+  assert.match(app, /musicProvider\.searchPage\(query, \{ provider: searchSource \}, controller\.signal\)/)
+  assert.match(app, /<select aria-label="搜索音乐源" value=\{searchSource\}/)
+  assert.match(app, /searchableSources\.map\(\(source\) => <option key=\{source\} value=\{source\}>\{sourceLabel\(source\)\}<\/option>\)/)
 })
 
 test('playlist delete confirmation expires automatically', async () => {

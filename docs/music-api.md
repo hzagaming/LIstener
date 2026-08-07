@@ -33,7 +33,7 @@
 
 `GET /api/music/providers`
 
-返回已启用 Provider 的名称、能力、官方/实验标记和被动状态：`healthy`、`degraded`、`unavailable`、`disabled` 或 `experimental`。
+返回 Provider 来源的名称、能力、官方/实验标记和被动状态：`healthy`、`degraded`、`unavailable`、`disabled` 或 `experimental`。一个受控适配器可以发布多个逻辑来源；例如配置 Brave Search Key 后，公开网页目录会分别发布 QQ、酷狗、酷我等来源，但不会把内部适配器 ID 暴露给客户端。
 
 ## 搜索
 
@@ -47,6 +47,8 @@
 | `page_size` | `20` | 1–50 |
 
 `data.items` 是现有标准 Track；`meta.cached` 表示是否命中完整结果缓存，`meta.provider_errors` 只包含来源和标准错误码，不包含原始异常。单来源失败不阻断其他来源；残缺结果不写正缓存。
+
+公开网页目录来源只接受 Brave 官方 API 返回、且能通过 `server/platforms.mjs` 官方域名和曲目地址/ID白名单再次验证的页面；这些 Track 的播放、歌词和下载能力均为关闭。
 
 ## 详情
 

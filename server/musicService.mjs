@@ -102,27 +102,39 @@ export const createMusicService = ({
   if (!Number.isInteger(maxConcurrentProviders) || maxConcurrentProviders < 1 || maxConcurrentProviders > 10) {
     throw new Error('valid provider concurrency is required')
   }
-  const providerById = new Map(providers.map((provider) => [provider.id, provider]))
+  const providerSources = new Map(providers.map((provider) => {
+    const sources = Array.isArray(provider.sources) && provider.sources.length ? provider.sources : [provider.id]
+    if (sources.some((source) => typeof source !== 'string' || !source)) throw new Error('valid music provider sources are required')
+    if (new Set(sources).size !== sources.length) throw new Error('duplicate music provider source')
+    return [provider.id, sources]
+  }))
+  const registrations = providers.flatMap((provider) => providerSources.get(provider.id).map((source) => [source, provider]))
+  if (new Set(registrations.map(([source]) => source)).size !== registrations.length) {
+    throw new Error('duplicate music provider source')
+  }
+  const providerById = new Map(registrations)
   const cache = new Map()
   const failureCache = new Map()
   const operationCache = new Map()
   const inFlight = new Map()
-  const sourceCapabilities = Object.fromEntries(providers.map((provider) => [
-    provider.id,
-    { ...defaultCapabilities(provider), ...provider.capabilities },
-  ]))
+  const sourceCapabilities = Object.fromEntries(providers.flatMap((provider) => (
+    providerSources.get(provider.id).map((source) => [
+      source,
+      { ...defaultCapabilities(provider), ...provider.capabilities, ...provider.capabilitiesBySource?.[source] },
+    ])
+  )))
   const providerHealth = new Map(providers.map((provider) => [
     provider.id,
     provider.enabled === false ? 'disabled' : provider.experimental ? 'experimental' : 'healthy',
   ]))
-  const providerDetails = () => providers.map((provider) => ({
-    id: provider.id,
-    name: provider.name || provider.id,
+  const providerDetails = () => providers.flatMap((provider) => providerSources.get(provider.id).map((source) => ({
+    id: source,
+    name: provider.sourceNames?.[source] || provider.name || source,
     status: providerHealth.get(provider.id),
     experimental: provider.experimental === true,
     official: provider.official === true,
-    capabilities: sourceCapabilities[provider.id],
-  }))
+    capabilities: sourceCapabilities[source],
+  })))
 
   const setBounded = (target, key, value) => {
     const timestamp = now()
@@ -135,7 +147,7 @@ export const createMusicService = ({
     target.set(key, value)
   }
 
-  const runProviderSearches = async (selectedProviders, query, pageSize, page, signal) => {
+  const runProviderSearches = async (selectedProviders, query, pageSize, page, signal, requestedSource) => {
     const results = Array(selectedProviders.length)
     let nextIndex = 0
     const worker = async () => {
@@ -151,7 +163,7 @@ export const createMusicService = ({
           results[index] = {
             status: 'fulfilled',
             value: await withTimeout(
-              (providerSignal) => provider.search(query, pageSize, providerSignal, page),
+              (providerSignal) => provider.search(query, pageSize, providerSignal, page, requestedSource),
               providerTimeoutMs,
               signal,
             ),
@@ -236,29 +248,36 @@ export const createMusicService = ({
         pageSize,
         page,
         controller.signal,
+        provider === 'all' ? undefined : provider,
       )
       if (controller.signal.aborted) throw abortReason(controller.signal)
       const providerErrors = []
+      let failedProviders = 0
       const providerTracks = results.flatMap((result, index) => {
+        const selectedProvider = selectedProviders[index]
+        const errorSources = provider === 'all' ? providerSources.get(selectedProvider.id) : [provider]
         if (result.status !== 'fulfilled' || !Array.isArray(result.value)) {
-          providerHealth.set(selectedProviders[index].id, result.status === 'rejected' ? 'unavailable' : 'degraded')
-          providerErrors.push({
-            provider: selectedProviders[index].id,
+          failedProviders += 1
+          providerHealth.set(selectedProvider.id, result.status === 'rejected' ? 'unavailable' : 'degraded')
+          providerErrors.push(...errorSources.map((source) => ({
+            provider: source,
             code: result.status === 'rejected' ? 'PROVIDER_UNAVAILABLE' : 'PROVIDER_INVALID_RESPONSE',
-          })
+          })))
           return []
         }
-        const valid = result.value.filter((track) => isTrack(track) && track.source === selectedProviders[index].id)
+        const emittedSources = new Set(provider === 'all' ? providerSources.get(selectedProvider.id) : [provider])
+        const valid = result.value.filter((track) => isTrack(track) && emittedSources.has(track.source))
         if (valid.length !== result.value.length) {
-          providerHealth.set(selectedProviders[index].id, 'degraded')
-          providerErrors.push({ provider: selectedProviders[index].id, code: 'PROVIDER_INVALID_RESPONSE' })
+          failedProviders += 1
+          providerHealth.set(selectedProvider.id, 'degraded')
+          providerErrors.push(...errorSources.map((source) => ({ provider: source, code: 'PROVIDER_INVALID_RESPONSE' })))
         } else {
-          providerHealth.set(selectedProviders[index].id, selectedProviders[index].experimental ? 'experimental' : 'healthy')
+          providerHealth.set(selectedProvider.id, selectedProvider.experimental ? 'experimental' : 'healthy')
         }
         return [valid]
       })
       if (!providerTracks.length || (
-        providerErrors.length === selectedProviders.length
+        failedProviders === selectedProviders.length
         && providerTracks.every((tracks) => !tracks.length)
       )) {
         setBounded(failureCache, key, { expiresAt: now() + failureTtlMs })
@@ -392,7 +411,7 @@ export const createMusicService = ({
     lyrics,
     download,
     identify: identifyMusicInput,
-    sources: providers.filter((provider) => provider.enabled !== false).map((provider) => provider.id),
+    sources: providers.filter((provider) => provider.enabled !== false).flatMap((provider) => providerSources.get(provider.id)),
     sourceCapabilities,
     get providerDetails() { return providerDetails() },
   }

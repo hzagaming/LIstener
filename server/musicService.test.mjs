@@ -665,6 +665,57 @@ test('rejects duplicate provider registrations', () => {
   }), /duplicate music provider id/)
 })
 
+test('publishes and searches every source emitted by one catalog provider', async () => {
+  const calls = []
+  const provider = {
+    id: 'web-catalog',
+    name: 'Public Web Catalog',
+    sources: ['qq', 'kugou'],
+    sourceNames: { qq: 'QQ Music', kugou: 'Kugou Music' },
+    experimental: true,
+    official: false,
+    capabilities: { search: true, playback: false, lyrics: false, download: false },
+    async search(query, _limit, _signal, _page, source) {
+      calls.push([query, source])
+      return source === 'qq'
+        ? [{ ...track('qq-1'), source: 'qq' }]
+        : [{ ...track('qq-1'), source: 'qq' }, { ...track('kg-1'), source: 'kugou' }]
+    },
+  }
+  const service = createMusicService({ providers: [provider] })
+
+  assert.deepEqual(service.sources, ['qq', 'kugou'])
+  assert.deepEqual(service.providerDetails.map(({ id, name, status }) => [id, name, status]), [
+    ['qq', 'QQ Music', 'experimental'],
+    ['kugou', 'Kugou Music', 'experimental'],
+  ])
+  assert.deepEqual((await service.searchDetailed({ query: '晴天' })).tracks.map(({ source }) => source), ['qq', 'kugou'])
+  assert.deepEqual((await service.searchDetailed({ query: '晴天', provider: 'qq' })).tracks.map(({ source }) => source), ['qq'])
+  assert.deepEqual(calls, [['晴天', undefined], ['晴天', 'qq']])
+})
+
+test('prevents a multi-source provider from leaking another source into a targeted search', async () => {
+  const service = createMusicService({ providers: [{
+    id: 'web-catalog',
+    sources: ['qq', 'kugou'],
+    search: async () => [
+      { ...track('qq-1'), source: 'qq' },
+      { ...track('kg-1'), source: 'kugou' },
+    ],
+  }] })
+
+  const result = await service.searchDetailed({ query: '晴天', provider: 'qq' })
+  assert.deepEqual(result.tracks.map(({ source }) => source), ['qq'])
+  assert.deepEqual(result.providerErrors, [{ provider: 'qq', code: 'PROVIDER_INVALID_RESPONSE' }])
+})
+
+test('rejects providers that advertise an already registered source', () => {
+  assert.throws(() => createMusicService({ providers: [
+    { id: 'one', sources: ['shared'], search: async () => [] },
+    { id: 'two', sources: ['shared'], search: async () => [] },
+  ] }), /duplicate music provider source/)
+})
+
 test('bounds aggregate provider concurrency', async () => {
   let active = 0
   let peak = 0

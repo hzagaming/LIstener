@@ -7,6 +7,7 @@
 | 前端搜索提交 | `static/js/music.js` | 搜索、分页、播放器列表 | 不复制；沿用 React 页面 | `src/App.tsx` |
 | 请求入口与参数分流 | `index.php` | API 参数校验和路由 | clean-room 重写 | `server/http.mjs` |
 | 按名称搜索 | `mc_get_song_by_name` | 关键词搜索 | 采用 Provider 聚合，不复用旧接口 | `server/musicService.mjs` |
+| 公开页面名称搜索 | 无 | 为缺少官方目录 API 的平台补充公开元数据 | 使用 Brave 官方搜索 API clean-room 实现并再次校验平台地址/ID | `server/providers/webCatalog.mjs` |
 | 按 ID 查询 | `mc_get_song_by_id` | 详情查询 | 按来源路由并校验标准 Track | `server/musicService.mjs` |
 | URL 识别 | `mc_get_song_by_url` | 地址/ID 识别 | 只对白名单平台做本地解析 | `server/platforms.mjs` |
 | URL 表 | `mc_song_urls` | Provider 请求构造 | 废弃巨大 switch；每来源独立模块 | `server/providers/*` |

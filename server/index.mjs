@@ -7,6 +7,7 @@ import { createMusicBrainzProvider } from './providers/musicbrainz.mjs'
 import { createWikimediaProvider } from './providers/wikimedia.mjs'
 import { createNeteaseProvider } from './providers/netease.mjs'
 import { createYouTubeProvider } from './providers/youtube.mjs'
+import { catalogWebSources, createWebCatalogProvider } from './providers/webCatalog.mjs'
 import { createLocalFixtureProvider } from './providers/localFixture.mjs'
 import { readMusicConfig } from './config.mjs'
 import { createStructuredLogger } from './logger.mjs'
@@ -47,6 +48,14 @@ if (selected('wikimedia')) {
 if (selected('audius') && process.env.AUDIUS_API_KEY?.trim()) {
   providers.push(createAudiusProvider({
     apiKey: process.env.AUDIUS_API_KEY,
+    ...providerHttp,
+  }))
+}
+const enabledWebCatalogSources = catalogWebSources.filter(selected)
+if (enabledWebCatalogSources.length && process.env.BRAVE_SEARCH_API_KEY?.trim()) {
+  providers.push(createWebCatalogProvider({
+    apiKey: process.env.BRAVE_SEARCH_API_KEY,
+    sources: enabledWebCatalogSources,
     ...providerHttp,
   }))
 }

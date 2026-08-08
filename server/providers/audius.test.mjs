@@ -51,6 +51,21 @@ test('searches Audius with a server-side API key and normalizes public tracks', 
   assert.equal(provider.capabilities.download, false)
 })
 
+test('searches public Audius tracks without requiring or sending an API key', async () => {
+  let request
+  const provider = createAudiusProvider({
+    fetchImpl: async (url, options) => {
+      request = { url: new URL(url), options }
+      return Response.json({ data: [track] })
+    },
+    minIntervalMs: 0,
+  })
+
+  assert.equal((await provider.search('public'))[0].id, 'D7KyD')
+  assert.equal(request.url.searchParams.has('api_key'), false)
+  assert.equal(request.url.origin, 'https://api.audius.co')
+})
+
 test('keeps gated or malformed-permission tracks visible but disables playback', async () => {
   const missingGate = { ...track, id: 'missing_gate' }
   delete missingGate.is_stream_gated
@@ -275,9 +290,8 @@ test('serializes Audius requests at the configured rate', async () => {
   assert.deepEqual(waits, [100, 100])
 })
 
-test('requires a safe API key and rejects malformed searches', async () => {
-  assert.throws(() => createAudiusProvider(), /API key is required/)
-  assert.throws(() => createAudiusProvider({ apiKey: 'key\nX-Test: injected' }), /API key is required/)
+test('accepts an absent API key and rejects unsafe optional credentials and malformed searches', async () => {
+  assert.throws(() => createAudiusProvider({ apiKey: 'key\nX-Test: injected' }), /invalid Audius API key/)
   assert.throws(() => createAudiusProvider({ apiKey: 'key', baseUrl: 'http://api.audius.co/v1/' }), /HTTPS/)
   assert.throws(() => createAudiusProvider({ apiKey: 'key', baseUrl: 'https://user:pass@api.audius.co/v1/' }), /HTTPS/)
   assert.throws(() => createAudiusProvider({ apiKey: 'key', baseUrl: 'https://api.example/v1/' }), /official host/)

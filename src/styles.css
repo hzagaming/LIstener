@@ -559,6 +559,8 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .advanced-search > button { grid-column: 1 / -1; justify-self: start; }
   .search-explore button { min-height: 36px; }
   .section-heading { align-items: flex-start; gap: 12px; }
+  .results-section .section-heading { flex-direction: column; }
+  .results-section .section-heading > div { width: 100%; }
   .section-actions { flex-wrap: wrap; justify-content: flex-end; }
   .collection-actions { justify-content: flex-start; }
   .recommendation-actions { align-items: flex-end; flex-direction: column; }

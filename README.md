@@ -2,23 +2,23 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、相似推荐、本地音乐、播放队列、账号同步、离线应用壳和按来源授权的歌词与下载能力。
 
-当前版本：`0.8.1`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.9.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
 需要 Node.js 18.17 或更高版本。
 
-默认一条命令同时启动 Node 聚合 API 与 Vite 前端，并接入 Apple、MusicBrainz、Wikimedia Commons，以及实验性的网易云公开元数据搜索：
+默认一条命令同时启动 Node 聚合 API 与 Vite 前端，并接入 Apple、Audius、MusicBrainz、Wikimedia Commons，以及实验性的网易云公开元数据搜索：
 
 ```bash
 npm install
 npm run dev
 ```
 
-只需要静态 Apple 公共搜索、不启动 Node API 时：
+只需要浏览器公共多源搜索、不启动 Node API 时：
 
 ```bash
-VITE_PUBLIC_APPLE=true npm run dev:client
+VITE_PUBLIC_BROWSER=true npm run dev:client
 ```
 
 构建生产版本：
@@ -31,9 +31,9 @@ Node 服务首次启动会自动创建 `data/listener.sqlite`，该目录已忽�
 
 ## GitHub Pages
 
-推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 本身无法运行 Node API 或安全保存 Provider Key；要启用聚合搜索，请先部署本仓库的 Node 服务，然后在仓库 **Settings → Secrets and variables → Actions → Variables** 新建 `MUSIC_API_BASE_URL`，值为服务端 HTTPS Origin（例如 `https://listener-api.example.com`）。工作流会把它注入 `VITE_MUSIC_API_BASE`，线上页面随即连接服务端已启用的全部 Provider；服务端同时需要设置 `CORS_ORIGIN=https://hzagaming.github.io`，YouTube Music、Audius 与公开网页目录搜索还需各自的服务端 Key。
+推送 `main` 后，GitHub Actions 会构建并发布 `dist` 到 `https://hzagaming.github.io/LIstener/`。Pages 本身无法运行 Node API 或安全保存 Provider Key；要启用全部后端来源，请先部署本仓库的 Node 服务，然后在仓库 **Settings → Secrets and variables → Actions → Variables** 新建 `MUSIC_API_BASE_URL`，值为服务端 HTTPS Origin（例如 `https://listener-api.example.com`）。工作流会把它注入 `VITE_MUSIC_API_BASE`，线上页面随即连接服务端已启用的全部 Provider；服务端同时需要设置 `CORS_ORIGIN=https://hzagaming.github.io`，YouTube Music 与公开网页目录搜索还需各自的服务端 Key。
 
-未配置 `MUSIC_API_BASE_URL` 或聚合服务暂时不可用时，页面会安全回退到无需密钥且支持浏览器跨域请求的 Apple Music 公共检索，不会向 Pages 上不存在的 `/api` 发请求。配置 `BRAVE_SEARCH_API_KEY` 后，QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 和全民 K 歌会通过 Brave 官方 Web Search API 检索公开曲目页面；只有能被本项目地址/ID白名单再次验证的页面才会返回。
+未配置 `MUSIC_API_BASE_URL` 或聚合服务暂时不可用时，页面会直接使用浏览器可跨域访问的 Apple Music、Audius、MusicBrainz 与 Wikimedia Commons，不会向 Pages 上不存在的 `/api` 发请求。Audius 与 Wikimedia Commons 可返回明确开放的完整音频和授权下载，MusicBrainz 补充 CC0 录音元数据，Apple 提供官方试听；四个来源彼此隔离，单一来源故障不会隐藏其他结果。配置 `BRAVE_SEARCH_API_KEY` 后，QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 和全民 K 歌会通过 Brave 官方 Web Search API 检索公开曲目页面；只有能被项目地址/ID白名单再次验证的页面才会返回。
 
 仓库的 **Settings → Pages → Build and deployment → Source** 必须选择 **GitHub Actions**。如果选择从 `main` 分支发布，GitHub 会在 Actions 部署后再次用源码覆盖站点，导致 `/src/main.tsx` 和 `/favicon.svg` 404；部署后的线上冒烟检查会将这种错误配置标记为失败。
 
@@ -47,7 +47,7 @@ Node 服务首次启动会自动创建 `data/listener.sqlite`，该目录已忽�
 CORS_ORIGIN=https://hzagaming.github.io
 BRAVE_SEARCH_API_KEY=你的Brave服务端Key
 YOUTUBE_API_KEY=你的YouTube服务端Key
-AUDIUS_API_KEY=你的Audius服务端Key
+# 可选：AUDIUS_API_KEY=你的Audius服务端Key
 ```
 
 然后启动 API：
@@ -56,7 +56,7 @@ AUDIUS_API_KEY=你的Audius服务端Key
 docker compose up -d --build
 ```
 
-Compose 会在任一 Key 缺失时拒绝启动，持久数据保存在 `listener-data` Volume。自托管端口默认是 `3000`，需要放在可信 HTTPS 反向代理后；托管平台应挂载 `/data` 并保留镜像内的 `/api/health` 健康检查。
+Compose 会在 Brave 或 YouTube Key 缺失时拒绝启动；Audius 公开只读搜索无需 Key。持久数据保存在 `listener-data` Volume。自托管端口默认是 `3000`，需要放在可信 HTTPS 反向代理后；托管平台应挂载 `/data` 并保留镜像内的 `/api/health` 健康检查。
 
 获得公网地址后执行严格验收；Apple-only、缺任一来源、错误 CORS、非 HTTPS 或异常健康响应都会失败：
 
@@ -73,9 +73,9 @@ gh workflow run deploy-pages.yml --ref main
 
 ## 接入音乐源
 
-页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 `server/providers/apple.mjs` 提供公开歌曲检索和授权试听，通过 `server/providers/musicbrainz.mjs` 补充 CC0 录音元数据，通过 `server/providers/wikimedia.mjs` 搜索 Wikimedia Commons 开放音频，并通过 `server/providers/netease.mjs` 补充网易云公开目录元数据和 ID 详情；配置官方 Key 后，`server/providers/youtube.mjs` 使用 YouTube Data API v3 搜索音乐类视频，`server/providers/webCatalog.mjs` 使用 Brave 官方搜索索引覆盖其余平台公开曲目页。没有合法播放地址的元数据会保留并明确标记为不可播放。Audius 配置 Key 后可提供创作者公开音频。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。并行聚合、分页、缓存、精确去重和被动健康状态位于 `server/musicService.mjs`。Pages 专用 Apple 公共适配器位于 `src/services/publicAppleProvider.mjs`，前端演示回退位于 `src/services/musicProvider.ts`。
+页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 Apple 提供公开歌曲检索和授权试听，通过 MusicBrainz 补充 CC0 录音元数据，通过 Wikimedia Commons 搜索开放音频，通过 Audius 提供创作者明确开放的公开音频，并通过实验性网易云 Provider 补充公开目录元数据和 ID 详情；配置官方 Key 后，YouTube Provider 使用 YouTube Data API v3 搜索音乐类视频，Web Catalog Provider 使用 Brave 官方搜索索引覆盖其余平台公开曲目页。没有合法播放地址的元数据会保留并明确标记为不可播放。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。Pages 的四来源公共聚合位于 `src/services/publicMusicProvider.mjs`，Apple 适配器位于 `src/services/publicAppleProvider.mjs`，演示回退位于 `src/services/musicProvider.ts`。
 
-Node 聚合模式默认使用“完整与元数据”播放范围：隐藏 Apple 试听结果，保留 Wikimedia/Audius 完整音频和网易云/MusicBrainz 目录元数据；可切换为“仅完整可播”或“包含试听”。未配置聚合 API 的 GitHub Pages 只有浏览器可直连的 Apple 公共接口，因此默认保留试听结果。
+Node 与 Pages 公共模式都默认使用“完整与元数据”播放范围：隐藏 Apple 试听结果，保留 Wikimedia/Audius 完整音频和网易云/MusicBrainz 目录元数据；可切换为“仅完整可播”或“包含试听”。
 
 搜索前可以选择全部已接入平台或指定单一平台；结果可继续按歌曲名、歌手或专辑字段过滤，限制为 3 分钟内、3–5 分钟或 5 分钟以上，并按相关度、歌曲名、歌手或时长排序。流派、场景、年代和地区入口会提交可见的普通搜索词，结果仍全部来自真实 Provider，不在浏览器内生成歌曲。
 
@@ -83,7 +83,7 @@ Node 聚合模式默认使用“完整与元数据”播放范围：隐藏 Apple
 
 地址/ID 解析支持网易、QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 原创/翻唱、全民 K 歌、YouTube Music、Apple Music、MusicBrainz、Audius API 和 Wikimedia Commons 文件页地址/ID，并兼容已验证的新版、移动端、无协议地址及只含一个链接的分享文案。YouTube 支持 `music.youtube.com/watch`、`youtube.com/watch`、`shorts`、`embed`、`youtu.be` 和 11 位视频 ID。含多个链接的输入会因歧义被拒绝；全民 K 歌没有原生名称搜索接口，配置公开网页目录后可检索已被索引且通过白名单验证的作品页。解析只识别格式，不代表对应平台已经获得播放或下载授权；健康接口会返回当前实际连接的来源和能力。
 
-开发模式未配置 `VITE_MUSIC_API_BASE` 时通过 Vite 的同源 `/api` 代理连接本地聚合服务；生产构建未配置时直接使用 Apple 公共搜索，不会探测不存在的 `/api`。跨域部署 Node API 时，将 `VITE_MUSIC_API_BASE` 设置为实际 API Origin。
+开发模式未配置 `VITE_MUSIC_API_BASE` 时通过 Vite 的同源 `/api` 代理连接本地聚合服务；生产构建未配置时直接使用浏览器公共多源搜索，不会探测不存在的 `/api`。跨域部署 Node API 时，将 `VITE_MUSIC_API_BASE` 设置为实际 API Origin。
 
 兼容接口：
 
@@ -105,7 +105,7 @@ Node 聚合模式默认使用“完整与元数据”播放范围：隐藏 Apple
 
 完整响应格式见 [音乐 API 文档](./docs/music-api.md)。
 
-Node 接口不可用时会先回退到 Apple 公共搜索，公共接口也持续不可用时才使用演示数据；页面会区分公共/演示结果并提供显式重试，不会将故障伪装成零结果。
+Node 接口不可用时会先回退到四来源公共搜索，所有公共接口都持续不可用时才使用演示数据；页面会区分公共/演示结果并提供显式重试，不会将故障伪装成零结果。
 
 服务端默认限制每个客户端每分钟 60 次请求，最多同时调用 4 个 Provider，搜索结果缓存 30 秒，并对同来源重复记录去重。`.env.example` 列出了 Provider、缓存、限流、SQLite、会话、地区 Header、封面和音频下载上限配置。服务端变量需由 shell 或部署平台注入，不会由 Node 自动读取 `.env.example`。
 
@@ -123,7 +123,7 @@ MUSICBRAINZ_CONTACT=ops@example.com npm run server
 
 Wikimedia Commons 来源使用官方 Action API 搜索文件命名空间中的音频，并直接播放 `upload.wikimedia.org` 公开文件；每个文件的作者、许可和署名要求以结果对应的 Commons 来源页为准。下载时 Node 服务只从固定 Wikimedia 媒体 Host 流式转发明确开放的音频并添加附件响应头，不落盘、不缓存，默认上限 128 MiB、总超时 120 秒。
 
-Audius 只开放官方 API 明确标记为可串流且未设置访问门槛的歌曲。API Key 始终保留在服务端，解析接口只向浏览器返回 Audius 生成的公开 HTTPS 流地址；不处理用户登录、签名、付费/关注/NFT 门槛或下载。请先阅读并接受 [Audius API Terms](https://audius.co/legal/api-terms)，再配置开发者 Key：
+Audius 只开放官方 API 明确标记为可串流且未设置访问门槛的歌曲；下载也必须同时带有公开下载授权。公开只读搜索无需 Key，部署者若配置开发者 Key，该 Key 始终只留在服务端；不处理用户登录、付费、关注或 NFT 门槛。使用前应阅读并接受 [Audius API Terms](https://audius.co/legal/api-terms)，开发者 Key 为可选项：
 
 ```bash
 AUDIUS_API_KEY=你的开发者Key npm run server

@@ -45,7 +45,7 @@ if (selected('musicbrainz')) {
 if (selected('wikimedia')) {
   providers.push(createWikimediaProvider(providerHttp))
 }
-if (selected('audius') && process.env.AUDIUS_API_KEY?.trim()) {
+if (selected('audius')) {
   providers.push(createAudiusProvider({
     apiKey: process.env.AUDIUS_API_KEY,
     ...providerHttp,

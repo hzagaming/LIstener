@@ -32,7 +32,7 @@
 | Provider | 默认状态 | 能力 | 合规依据 |
 |---|---|---|---|
 | Apple | enabled | 公开搜索、元数据、官方试听 | Apple iTunes Search/Lookup 公开端点 |
-| Audius | conditional | 搜索、公开流 | 仅设置服务端 API Key 时启用，播放前检查公开权限 |
+| Audius | enabled | 搜索、公开流；静态版授权下载 | 公开只读 API 无需 Key，播放和下载前分别检查公开权限 |
 | MusicBrainz | enabled | CC0 录音元数据 | 默认使用项目地址标识客户端，按官方速率调度；部署者可覆盖联系信息 |
 | NetEase | experimental | 元数据搜索；播放禁用 | 仅显式开关启用；接口未获官方稳定性确认，不解析播放地址 |
 | Wikimedia | enabled | 开放音频搜索、播放、授权下载 | 官方 Action API 与固定媒体 Host；许可以来源页为准 |
@@ -47,7 +47,7 @@ QQ、酷狗等平台没有接入逆向私有 API；未配置 Brave Search Key �
 - 单 Provider 超时、聚合降级、稳定交错排序和来源级精确去重。
 - 搜索请求合并、短期缓存、缓存容量上限和客户端取消。
 - Provider 能力门控；未明确授权时歌词和下载默认关闭。
-- Audius Key 不返回前端，并检查返回 URL 是否泄露凭据。
+- Audius Key 为可选服务端配置且不返回前端，并检查返回 URL 是否泄露凭据。
 - 前端保留演示回退，第三方故障不会破坏页面基本交互。
 
 ## 已落实模块与剩余边界
@@ -56,7 +56,7 @@ QQ、酷狗等平台没有接入逆向私有 API；未配置 Brave Search Key �
 2. `LocalFixtureProvider`、LRC 时间轴解析、指定 Provider/分页搜索、Provider 列表和版本化响应均已实现，并由离线集成测试覆盖。
 3. 搜索、详情和歌词使用有界进程内缓存；完整故障使用短期负缓存，播放临时地址不持久化。
 4. Provider 健康状态、来源级错误、API 限流、结构化请求日志和敏感信息脱敏已统一。
-5. 本地开发由 `server/dev.mjs` 同时启动 API 与 Vite，前端通过同源代理消费 Apple 与 MusicBrainz 聚合结果；Pages 和无 Node API 的生产构建使用独立公共 Apple 适配器。公共适配器同样限制 Host、流式响应大小、超时，并只对网络错误、429、502、503、504 做一次可取消退避重试。
+5. 本地开发由 `server/dev.mjs` 同时启动 API 与 Vite；Pages 和无 Node API 的生产构建使用 Apple、Audius、MusicBrainz 与 Wikimedia Commons 公共聚合。公共适配器限制 Host、响应大小、超时和 MusicBrainz 每秒一次请求，来源故障相互隔离。
 6. 当前使用单机 SQLite，仍无共享缓存和分布式限流；多实例生产环境需要外部基础设施。QQ、酷狗等没有已确认官方目录 API 的来源通过受控网页索引补充名称搜索，但不宣称可播放。
 7. 仓库仍缺少根 `LICENSE`；发布者必须先确定项目许可证。参考项目只做 clean-room 架构研究，没有复制其代码。
 

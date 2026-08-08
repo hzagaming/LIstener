@@ -4,6 +4,7 @@ import { createSearchFallbackError, parseSearchPage } from '../searchLogic.mjs'
 import { isMusicIdentification, isMusicSource, isTrack } from '../types/music'
 import { isSafeUrl } from '../urlPolicy.mjs'
 import { createPublicAppleProvider } from './publicAppleProvider.mjs'
+import { createPublicMusicProvider } from './publicMusicProvider.mjs'
 import { artworkFilename, builtInArtwork, readArtworkResponse } from '../downloadLogic.mjs'
 import type {
   DownloadDescriptor, Lyrics, MusicIdentification, MusicProvider, MusicSearchPage, MusicSearchPageOptions, MusicSource,
@@ -245,12 +246,13 @@ class ApiProvider implements MusicProvider {
 
 const demoProvider = new DemoProvider()
 const publicAppleProvider = createPublicAppleProvider({ fallback: demoProvider })
+const publicMusicProvider = createPublicMusicProvider({ apple: publicAppleProvider, fallback: demoProvider })
 const configuredApiBase = import.meta.env.VITE_MUSIC_API_BASE?.trim() ?? ''
 const apiBase = configuredApiBase || (import.meta.env.DEV ? window.location.origin : '')
-export const publicAppleMode = import.meta.env.VITE_PUBLIC_APPLE === 'true' || !apiBase
-export const musicProvider: MusicProvider = publicAppleMode
-  ? publicAppleProvider
-  : new ApiProvider(apiBase, publicAppleProvider)
+export const publicBrowserMode = import.meta.env.VITE_PUBLIC_BROWSER === 'true' || !apiBase
+export const musicProvider: MusicProvider = publicBrowserMode
+  ? publicMusicProvider
+  : new ApiProvider(apiBase, publicMusicProvider)
 export const sourceLabel = (source: MusicSource) => labels[source]
 
 export const downloadArtwork = async (track: Track, signal?: AbortSignal) => {
@@ -261,11 +263,11 @@ export const downloadArtwork = async (track: Track, signal?: AbortSignal) => {
       filename: artworkFilename(track.title, artwork.type),
     }
   }
-  const url = publicAppleMode
+  const url = publicBrowserMode
     ? new URL(track.cover)
     : new URL(`/api/artwork?source=${encodeURIComponent(track.source)}&id=${encodeURIComponent(track.id)}`, apiBase)
   const response = await fetch(url, {
-    credentials: publicAppleMode ? 'omit' : 'include',
+    credentials: publicBrowserMode ? 'omit' : 'include',
     headers: { Accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif' },
     signal: createRequestSignal(signal, 12_000),
   })

@@ -33,10 +33,11 @@ test('GitHub Pages enables aggregate search when its API repository variable is 
   assert.doesNotMatch(workflow, /VITE_PUBLIC_APPLE:\s*['"]true['"]/)
   assert.doesNotMatch(workflow, /VITE_STATIC_DEMO/)
   assert.match(provider, /const publicAppleProvider = createPublicAppleProvider\(\{ fallback: demoProvider \}\)/)
-  assert.match(provider, /export const publicAppleMode = import\.meta\.env\.VITE_PUBLIC_APPLE === 'true' \|\| !apiBase/)
-  assert.match(provider, /publicAppleMode\s*\? publicAppleProvider\s*:\s*new ApiProvider\(apiBase, publicAppleProvider\)/)
-  assert.match(app, /import \{ downloadArtwork, musicProvider, publicAppleMode, sourceLabel \}/)
-  assert.match(app, /const identifiableSources: MusicSource\[\] = publicAppleMode \? \['apple'\] :/)
+  assert.match(provider, /const publicMusicProvider = createPublicMusicProvider\(\{ apple: publicAppleProvider, fallback: demoProvider \}\)/)
+  assert.match(provider, /export const publicBrowserMode = import\.meta\.env\.VITE_PUBLIC_BROWSER === 'true' \|\| !apiBase/)
+  assert.match(provider, /publicBrowserMode\s*\? publicMusicProvider\s*:\s*new ApiProvider\(apiBase, publicMusicProvider\)/)
+  assert.match(app, /import \{ downloadArtwork, musicProvider, publicBrowserMode, sourceLabel \}/)
+  assert.match(app, /const identifiableSources: MusicSource\[\] = musicSources\.filter/)
   assert.match(workflow, /actions\/checkout@v7/)
   assert.match(workflow, /actions\/setup-node@v7/)
   assert.match(workflow, /actions\/configure-pages@v5/)
@@ -107,7 +108,7 @@ test('the UI exposes one music output and hides internal fixture identifiers', a
   assert.doesNotMatch(app, /new Audio\s*\(/)
   assert.doesNotMatch(app, /AudioContext\s*\(/)
   assert.match(app, /\['demo', 'local', 'fixture'\]\.includes\(source\)/)
-  assert.match(app, /useState<PlaybackFilter>\(publicAppleMode \? 'all' : 'no-preview'\)/)
+  assert.match(app, /useState<PlaybackFilter>\('no-preview'\)/)
   assert.match(app, /完整与元数据/)
   assert.match(app, /仅完整可播/)
   assert.match(app, /包含试听/)
@@ -175,6 +176,14 @@ test('narrow public search headings remain on one readable line', async () => {
   assert.match(mobile, /\.search-hero h1\s*\{[^}]*font-size:\s*clamp\(34px,\s*10\.5vw,\s*44px\)[^}]*white-space:\s*nowrap/)
 })
 
+test('mobile result summaries stack without squeezing the search heading', async () => {
+  const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+  const mobile = styles.slice(styles.indexOf('@media (max-width: 820px)'), styles.indexOf('@media (max-width: 420px)'))
+
+  assert.match(mobile, /\.results-section \.section-heading\s*\{[^}]*flex-direction:\s*column/)
+  assert.match(mobile, /\.results-section \.section-heading > div\s*\{[^}]*width:\s*100%/)
+})
+
 test('ID resolution aborts an active keyword search', async () => {
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
   const searchEffect = app.slice(app.indexOf('const inputMode'), app.indexOf('const currentKey'))
@@ -206,6 +215,15 @@ test('search can target every currently connected provider before results load',
   assert.match(app, /searchableSources\.map\(\(source\) => <option key=\{source\} value=\{source\}>\{sourceLabel\(source\)\}<\/option>\)/)
 })
 
+test('the static UI advertises public multi-source search and full-track playback honestly', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+
+  assert.match(app, /公共多平台搜索/)
+  assert.match(app, /Apple Music、Audius、MusicBrainz 与 Wikimedia Commons/)
+  assert.match(app, /Audius 与 Wikimedia Commons 可提供来源明确授权的完整音频/)
+  assert.doesNotMatch(app, />Apple Music 搜索</)
+})
+
 test('playlist delete confirmation expires automatically', async () => {
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
 
@@ -235,6 +253,16 @@ test('media errors own playback failure feedback without a competing promise not
   const attemptPlayback = app.slice(app.indexOf('const attemptPlayback'), app.indexOf('const isCurrentAudio'))
 
   assert.match(attemptPlayback, /if \(audioRef\.current !== audio \|\| audio\.error\) return/)
+})
+
+test('a stalled audio source cannot leave the player buffering forever', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const buffering = app.slice(app.indexOf('const clearBufferingTimeout'), app.indexOf('const cancelMediaRetry'))
+
+  assert.match(app, /const bufferingTimerRef = useRef<number>\(\)/)
+  assert.match(buffering, /window\.setTimeout\([\s\S]*?audio\.pause\(\)[\s\S]*?setIsBuffering\(false\)[\s\S]*?音源连接超时，请重试或换一首[\s\S]*?15_000/)
+  assert.match(app, /onPlaying=\{\(event\) => \{ if \(isCurrentAudio\(event\.currentTarget\)\) \{ clearBufferingTimeout\(\)/)
+  assert.match(app, /onPause=\{\(event\) => \{ if \(isCurrentAudio\(event\.currentTarget\)\) \{ clearBufferingTimeout\(\)/)
 })
 
 test('an unplayable track clears stale system media progress', async () => {

@@ -19,11 +19,13 @@ test('ships a non-root production API image with persistent state and health che
 test('ships an all-source Compose deployment without embedding secrets', async () => {
   const compose = await readFile(new URL('../compose.yaml', import.meta.url), 'utf8')
   const ignore = await readFile(new URL('../.dockerignore', import.meta.url), 'utf8')
+  const index = await readFile(new URL('./index.mjs', import.meta.url), 'utf8')
 
   assert.match(compose, /CORS_ORIGIN:\s*\$\{CORS_ORIGIN:-https:\/\/hzagaming\.github\.io\}/)
   assert.match(compose, /BRAVE_SEARCH_API_KEY:\s*\$\{BRAVE_SEARCH_API_KEY:\?[^}]+\}/)
   assert.match(compose, /YOUTUBE_API_KEY:\s*\$\{YOUTUBE_API_KEY:\?[^}]+\}/)
-  assert.match(compose, /AUDIUS_API_KEY:\s*\$\{AUDIUS_API_KEY:\?[^}]+\}/)
+  assert.match(compose, /AUDIUS_API_KEY:\s*\$\{AUDIUS_API_KEY:-\}/)
+  assert.doesNotMatch(compose, /AUDIUS_API_KEY:\s*\$\{AUDIUS_API_KEY:\?/)
   assert.match(compose, /LISTENER_DB_PATH:\s*\/data\/listener\.sqlite/)
   assert.match(compose, /listener-data:\/data/)
   assert.match(compose, /^volumes:\n\s+listener-data:/m)
@@ -31,4 +33,5 @@ test('ships an all-source Compose deployment without embedding secrets', async (
   assert.match(ignore, /^\.env$/m)
   assert.match(ignore, /^data$/m)
   assert.match(ignore, /^node_modules$/m)
+  assert.match(index, /if \(selected\('audius'\)\) \{\s*providers\.push\(createAudiusProvider/)
 })

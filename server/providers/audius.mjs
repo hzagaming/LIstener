@@ -31,6 +31,7 @@ const containsEncodedSecret = (value, secret) => {
 const safePublicUrl = (value, apiKey, baseUrl) => {
   const url = safeHttpsUrl(value, baseUrl)
   if (!url) return null
+  if (!apiKey) return url
   const parts = [url, ...new URL(url).searchParams].flat()
   return parts.some((part) => containsEncodedSecret(part, apiKey)) ? null : url
 }
@@ -85,8 +86,8 @@ export const createAudiusProvider = ({
   waitImpl,
 } = {}) => {
   const normalizedKey = typeof apiKey === 'string' ? apiKey.trim() : ''
-  if (!normalizedKey || normalizedKey.length > 500 || /[\u0000-\u001f\u007f]/.test(normalizedKey)) {
-    throw new Error('Audius API key is required')
+  if (normalizedKey.length > 500 || /[\u0000-\u001f\u007f]/.test(normalizedKey)) {
+    throw new Error('invalid Audius API key')
   }
   const endpoint = new URL(baseUrl || DEFAULT_BASE_URL)
   if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password) {
@@ -109,7 +110,7 @@ export const createAudiusProvider = ({
 
   const request = (url, signal, errorCodes = {}) => {
     const authenticatedUrl = new URL(url)
-    authenticatedUrl.searchParams.set('api_key', normalizedKey)
+    if (normalizedKey) authenticatedUrl.searchParams.set('api_key', normalizedKey)
     const requestSignal = signal
       ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
       : AbortSignal.timeout(timeoutMs)

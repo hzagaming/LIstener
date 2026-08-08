@@ -1,7 +1,7 @@
 {
   "name": "listener",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.8.1",
   "type": "module",
   "engines": {
     "node": ">=18.17"
@@ -13,7 +13,8 @@
     "build": "tsc --noEmit -p tsconfig.app.json && vite build",
     "preview": "vite preview",
     "server": "node server/index.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "verify:deployment": "node server/deploymentCheck.mjs"
   },
   "dependencies": {
     "better-sqlite3": "11.10.0",

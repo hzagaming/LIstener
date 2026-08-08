@@ -2137,7 +2137,7 @@ function App() {
 
               <section className="account-panel settings-panel settings-panel--project">
                 <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
-                <p>Listener 0.8.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <p>Listener 0.8.1 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
                 <div className="project-links">
                   {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
                 </div>

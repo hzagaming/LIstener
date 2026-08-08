@@ -7,7 +7,7 @@
 - 后端：Node `http`、原生 `fetch` 与 `AbortSignal`，入口为 `server/index.mjs`。
 - 测试：Node Test Runner；构建执行 TypeScript 静态检查和 Vite 打包。
 - 数据库：本地 SQLite 账号、会话和用户状态；运行时文件位于忽略目录，不进入发布物。
-- 队列、共享缓存与 Docker：当前未配置；CI 使用 GitHub Actions 构建和发布 Pages。
+- 队列与共享缓存：当前未配置；生产 API 提供非 root Docker 镜像、持久化 SQLite Volume、容器健康检查及全来源部署验收，CI 使用 GitHub Actions 构建和发布 Pages。
 - 缓存与限流：进程内搜索缓存、请求合并、API IP 限流及部分 Provider 请求调度。
 - 配置：通过 `process.env` 读取，公开变量示例位于 `.env.example`。
 - 日志：`server/logger.mjs` 输出带请求 ID、状态和耗时的结构化 JSON，并递归脱敏凭据与签名查询参数。

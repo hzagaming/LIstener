@@ -19,7 +19,7 @@ test('ships a settings center with playback, appearance, source, and project con
   assert.match(app, /全民 K 歌原生能力仅支持 ID 或地址解析；配置公开网页目录后可检索已索引作品页/)
   assert.match(app, /YouTube Music 使用官方 Data API 搜索元数据，不抽取音视频/)
   assert.match(app, /YouTube Music、Audius 与其余平台公开网页目录搜索需部署者配置对应服务端 API Key/)
-  assert.match(app, /Listener 0\.8\.0/)
+  assert.match(app, /Listener 0\.8\.1/)
   assert.match(app, /地址 \/ ID 解析/)
   assert.match(app, /if \(!providerStatus\.sources\.includes\(match\.source\)\)/)
   assert.match(app, /https:\/\/github\.com\/hzagaming\/LIstener\/issues/)

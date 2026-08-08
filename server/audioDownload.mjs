@@ -37,7 +37,7 @@ export const createAudioDownloader = ({ fetchImpl = globalThis.fetch, maxBytes =
     response = await fetchImpl(target, {
       headers: {
         Accept: 'audio/*,application/ogg',
-        'User-Agent': 'Listener/0.8.0 (+https://github.com/hzagaming/LIstener)',
+        'User-Agent': 'Listener/0.8.1 (+https://github.com/hzagaming/LIstener)',
       },
       redirect: 'manual',
       signal: requestSignal,

@@ -2,7 +2,7 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、相似推荐、本地音乐、播放队列、账号同步、离线应用壳和按来源授权的歌词与下载能力。
 
-当前版本：`0.8.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.8.1`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
@@ -36,6 +36,40 @@ Node 服务首次启动会自动创建 `data/listener.sqlite`，该目录已忽�
 未配置 `MUSIC_API_BASE_URL` 或聚合服务暂时不可用时，页面会安全回退到无需密钥且支持浏览器跨域请求的 Apple Music 公共检索，不会向 Pages 上不存在的 `/api` 发请求。配置 `BRAVE_SEARCH_API_KEY` 后，QQ、酷狗、酷我、千千、一听、咪咕、荔枝、蜻蜓、喜马拉雅、5sing 和全民 K 歌会通过 Brave 官方 Web Search API 检索公开曲目页面；只有能被本项目地址/ID白名单再次验证的页面才会返回。
 
 仓库的 **Settings → Pages → Build and deployment → Source** 必须选择 **GitHub Actions**。如果选择从 `main` 分支发布，GitHub 会在 Actions 部署后再次用源码覆盖站点，导致 `/src/main.tsx` 和 `/favicon.svg` 404；部署后的线上冒烟检查会将这种错误配置标记为失败。
+
+## 部署聚合 API
+
+`Dockerfile` 只打包 Node 生产依赖和 `server/`，以非 root 用户运行，并把账号与歌单数据库固定写入 `/data/listener.sqlite`。可将该镜像直接部署到支持持久 Volume 的 Railway、Render、Fly.io、Docker 主机或 VPS；必须为它分配公网 HTTPS Origin。
+
+使用 Compose 时，先在不会提交的本机 `.env` 中填写真实服务端 Key：
+
+```env
+CORS_ORIGIN=https://hzagaming.github.io
+BRAVE_SEARCH_API_KEY=你的Brave服务端Key
+YOUTUBE_API_KEY=你的YouTube服务端Key
+AUDIUS_API_KEY=你的Audius服务端Key
+```
+
+然后启动 API：
+
+```bash
+docker compose up -d --build
+```
+
+Compose 会在任一 Key 缺失时拒绝启动，持久数据保存在 `listener-data` Volume。自托管端口默认是 `3000`，需要放在可信 HTTPS 反向代理后；托管平台应挂载 `/data` 并保留镜像内的 `/api/health` 健康检查。
+
+获得公网地址后执行严格验收；Apple-only、缺任一来源、错误 CORS、非 HTTPS 或异常健康响应都会失败：
+
+```bash
+npm run verify:deployment -- https://listener-api.example.com https://hzagaming.github.io
+```
+
+验收显示 `18 searchable sources` 后，将 API Origin 注入 Pages 并重新发布：
+
+```bash
+gh variable set MUSIC_API_BASE_URL --body "https://listener-api.example.com"
+gh workflow run deploy-pages.yml --ref main
+```
 
 ## 接入音乐源
 

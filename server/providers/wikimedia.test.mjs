@@ -50,7 +50,7 @@ test('searches Wikimedia Commons audio with bounded pagination and normalizes pl
   assert.equal(request.url.searchParams.get('formatversion'), '2')
   assert.equal(request.url.searchParams.get('origin'), '*')
   assert.equal(request.options.redirect, 'manual')
-  assert.equal(request.options.headers['User-Agent'], 'Listener/0.8.0 (+https://github.com/hzagaming/LIstener)')
+  assert.equal(request.options.headers['User-Agent'], 'Listener/0.8.1 (+https://github.com/hzagaming/LIstener)')
   assert.equal(provider.capabilities.playback, true)
   assert.equal(provider.capabilities.download, true)
   assert.equal(provider.maxSearchResults, 10)

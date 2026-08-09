@@ -24,6 +24,52 @@ export const filterTracksByPlayback = (tracks, mode) => {
     : track?.capabilities?.playback !== 'preview')
 }
 
+export const playbackRank = (track) => {
+  const playback = track?.capabilities?.playback
+  const direct = Boolean(track?.audioUrl)
+  if (playback === 'full') return direct ? 0 : 2
+  if (playback === 'preview') return direct ? 1 : 3
+  return 4
+}
+
+export const prioritizePlayableTracks = (tracks) => {
+  if (!Array.isArray(tracks)) return []
+  return tracks.map((track, index) => ({ track, index })).sort((left, right) => (
+    playbackRank(left.track) - playbackRank(right.track)
+    || left.index - right.index
+  )).map(({ track }) => track)
+}
+
+export const diversifyRankedTracks = (tracks, limit) => {
+  if (!Array.isArray(tracks) || !Number.isInteger(limit) || limit < 1) return []
+  const ranked = prioritizePlayableTracks(tracks)
+  const boundedLimit = Math.min(limit, ranked.length)
+  const priorityCount = Math.ceil(boundedLimit / 2)
+  const selected = ranked.slice(0, priorityCount)
+  const selectedSources = new Set(selected.map((track) => String(track?.source ?? '')))
+  const groups = new Map()
+  for (const track of ranked.slice(priorityCount)) {
+    const source = String(track?.source ?? '')
+    if (!groups.has(source)) groups.set(source, [])
+    groups.get(source).push(track)
+  }
+  const orderedGroups = [...groups].sort(([left], [right]) => (
+    Number(selectedSources.has(left)) - Number(selectedSources.has(right))
+  )).map(([, group]) => group)
+  for (let index = 0; selected.length < boundedLimit; index += 1) {
+    let progressed = false
+    for (const group of orderedGroups) {
+      const track = group[index]
+      if (!track) continue
+      progressed = true
+      selected.push(track)
+      if (selected.length === boundedLimit) break
+    }
+    if (!progressed) break
+  }
+  return selected
+}
+
 const searchableText = (value) => String(value ?? '').normalize('NFKC').toLocaleLowerCase()
 
 export const refineSearchTracks = (tracks, options = {}) => {

@@ -101,17 +101,36 @@ test('the initial player does not initiate third-party audio loading', async () 
   assert.match(currentTrackEffect, /if \(!autoplayMediaMatches\(autoplayMediaKeyRef\.current, currentMediaKey\)\) return[\s\S]*?audio\.load\(\)/)
 })
 
-test('the UI exposes one music output and hides internal fixture identifiers', async () => {
+test('the UI exposes one music output and defaults to playable-first results', async () => {
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
 
   assert.equal((app.match(/<audio\b/g) ?? []).length, 1)
   assert.doesNotMatch(app, /new Audio\s*\(/)
   assert.doesNotMatch(app, /AudioContext\s*\(/)
   assert.match(app, /\['demo', 'local', 'fixture'\]\.includes\(source\)/)
-  assert.match(app, /useState<PlaybackFilter>\('no-preview'\)/)
-  assert.match(app, /完整与元数据/)
+  assert.match(app, /useState<PlaybackFilter>\('all'\)/)
+  assert.match(app, /全部 · 可播优先/)
+  assert.match(app, /无试听（含元数据）/)
   assert.match(app, /仅完整可播/)
-  assert.match(app, /包含试听/)
+  assert.match(app, /diversifyRankedTracks\(refined, refined\.length\)/)
+  assert.match(app, /searchPage\(query, \{ provider: searchSource, pageSize: 50 \}/)
+  assert.match(app, /完整音源 · 点击验证/)
+  assert.match(app, /直接可播 \$\{resultPlaybackCounts\.direct\} 首/)
+})
+
+test('metadata-only search results open their verified source instead of becoming dead controls', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const resolveAndPlay = app.slice(app.indexOf('const resolveAndPlay'), app.indexOf('const startCurrent'))
+
+  assert.match(app, /playbackUnavailable \? false : playControlDisabled/)
+  assert.match(resolveAndPlay, /target\.capabilities\.playback === 'none'[\s\S]*?cancelPendingPlay\(\)[\s\S]*?window\.open\(target\.sourceUrl, '_blank', 'noopener,noreferrer'\)/)
+  assert.match(app, /站内不可播 · 点击左侧前往来源/)
+})
+
+test('playable-first search keeps its TypeScript declaration in sync', async () => {
+  const declaration = await readFile(new URL('./searchLogic.d.mts', import.meta.url), 'utf8')
+
+  assert.match(declaration, /export declare const prioritizePlayableTracks: <T extends \{ capabilities: \{ playback: string \} \}>/)
 })
 
 test('playlist recommendations stay derived, cancellable, and free of previews', async () => {
@@ -210,7 +229,7 @@ test('search can target every currently connected provider before results load',
 
   assert.match(app, /const \[searchSource, setSearchSource\] = useState<'all' \| MusicSource>\('all'\)/)
   assert.match(app, /providerStatus\.sources\.filter\(\(source\) => providerStatus\.capabilities\[source\]\?\.search/)
-  assert.match(app, /musicProvider\.searchPage\(query, \{ provider: searchSource \}, controller\.signal\)/)
+  assert.match(app, /musicProvider\.searchPage\(query, \{ provider: searchSource, pageSize: 50 \}, controller\.signal\)/)
   assert.match(app, /<select aria-label="搜索音乐源" value=\{searchSource\}/)
   assert.match(app, /searchableSources\.map\(\(source\) => <option key=\{source\} value=\{source\}>\{sourceLabel\(source\)\}<\/option>\)/)
 })

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  createSearchFallbackError, filterTracksByPlayback, parseSearchPage, refineSearchTracks,
+  createSearchFallbackError, diversifyRankedTracks, filterTracksByPlayback, parseSearchPage, prioritizePlayableTracks, refineSearchTracks,
   searchFallbackTracks, searchInputMode,
 } from './searchLogic.mjs'
 
@@ -38,6 +38,44 @@ test('hides previews by default while preserving full tracks and metadata', () =
   assert.deepEqual(filterTracksByPlayback(tracks, 'full').map(({ id }) => id), ['full'])
   assert.equal(filterTracksByPlayback(tracks, 'all'), tracks)
   assert.deepEqual(filterTracksByPlayback(null, 'all'), [])
+})
+
+test('prioritizes direct full and preview playback before unresolved full candidates and metadata', () => {
+  const tracks = [
+    { id: 'metadata-1', capabilities: { playback: 'none' } },
+    { id: 'preview-1', audioUrl: 'https://audio.example/preview-1', capabilities: { playback: 'preview' } },
+    { id: 'full-1', audioUrl: '', capabilities: { playback: 'full' } },
+    { id: 'metadata-2', capabilities: { playback: 'none' } },
+    { id: 'full-2', audioUrl: 'https://audio.example/full-2', capabilities: { playback: 'full' } },
+    { id: 'preview-2', audioUrl: '', capabilities: { playback: 'preview' } },
+    { id: 'full-3', audioUrl: '', capabilities: { playback: 'full' } },
+  ]
+
+  assert.deepEqual(prioritizePlayableTracks(tracks).map(({ id }) => id), [
+    'full-2', 'preview-1', 'full-1', 'full-3', 'preview-2', 'metadata-1', 'metadata-2',
+  ])
+  assert.deepEqual(tracks.map(({ id }) => id), [
+    'metadata-1', 'preview-1', 'full-1', 'metadata-2', 'full-2', 'preview-2', 'full-3',
+  ])
+  assert.deepEqual(prioritizePlayableTracks(null), [])
+})
+
+test('keeps the first half strictly playable-first and diversifies the remaining result sources', () => {
+  const direct = Array.from({ length: 8 }, (_, index) => ({
+    id: `apple-${index}`, source: 'apple', audioUrl: `https://audio.example/${index}`,
+    capabilities: { playback: 'preview' },
+  }))
+  const tracks = [
+    ...direct,
+    { id: 'audius-1', source: 'audius', audioUrl: '', capabilities: { playback: 'full' } },
+    { id: 'netease-1', source: 'netease', audioUrl: '', capabilities: { playback: 'none' } },
+    { id: 'musicbrainz-1', source: 'musicbrainz', audioUrl: '', capabilities: { playback: 'none' } },
+  ]
+
+  assert.deepEqual(diversifyRankedTracks(tracks, 6).map(({ id }) => id), [
+    'apple-0', 'apple-1', 'apple-2', 'audius-1', 'netease-1', 'musicbrainz-1',
+  ])
+  assert.deepEqual(diversifyRankedTracks(tracks, 0), [])
 })
 
 test('filters search results by metadata field and duration without mutating relevance order', () => {

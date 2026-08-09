@@ -1,4 +1,5 @@
 import { identifyMusicInput } from './platforms.mjs'
+import { diversifyRankedTracks, playbackRank } from '../src/searchLogic.mjs'
 
 const normalize = (value) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase()
 
@@ -81,6 +82,28 @@ const getProvider = (providerById, source) => {
   if (!provider) throw new Error('unknown music source')
   if (provider.enabled === false) throw new Error('music source is disabled')
   return provider
+}
+
+const interleaveByPlayback = (providerTracks, limit) => {
+  const seen = new Set()
+  const tracks = []
+  for (const rank of [0, 1, 2, 3, 4]) {
+    const tier = providerTracks.map((items) => items.filter((track) => playbackRank(track) === rank))
+    for (let index = 0; ; index += 1) {
+      let progressed = false
+      for (const candidates of tier) {
+        const track = candidates[index]
+        if (!track) continue
+        progressed = true
+        const identity = `${track.source}:${track.id}`
+        if (seen.has(identity)) continue
+        seen.add(identity)
+        tracks.push(track)
+      }
+      if (!progressed) break
+    }
+  }
+  return diversifyRankedTracks(tracks, limit)
 }
 
 export const createMusicService = ({
@@ -284,22 +307,7 @@ export const createMusicService = ({
         throw new Error('all music providers failed')
       }
 
-      const seen = new Set()
-      const tracks = []
-      for (let index = 0; tracks.length <= pageSize; index += 1) {
-        let progressed = false
-        for (const candidates of providerTracks) {
-          const track = candidates[index]
-          if (!track) continue
-          progressed = true
-          const identity = `${track.source}:${track.id}`
-          if (seen.has(identity)) continue
-          seen.add(identity)
-          tracks.push(track)
-          if (tracks.length > pageSize) break
-        }
-        if (!progressed) break
-      }
+      const tracks = interleaveByPlayback(providerTracks, pageSize + 1)
       const value = {
         tracks: tracks.slice(0, pageSize),
         providerErrors,

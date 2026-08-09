@@ -12,6 +12,8 @@ const track = {
     '480x480': 'https://img.audius.example/480.jpg',
   },
   permalink: '/camouflybeats/hypermantra-86216',
+  access: { stream: true, download: true },
+  is_available: true,
   is_streamable: true,
   is_stream_gated: false,
   stream_conditions: null,
@@ -69,6 +71,8 @@ test('searches public Audius tracks without requiring or sending an API key', as
 test('keeps gated or malformed-permission tracks visible but disables playback', async () => {
   const missingGate = { ...track, id: 'missing_gate' }
   delete missingGate.is_stream_gated
+  const missingAccess = { ...track, id: 'missing_access' }
+  delete missingAccess.access
   const provider = createAudiusProvider({
     apiKey: 'test-key',
     fetchImpl: async () => Response.json({ data: [
@@ -80,12 +84,13 @@ test('keeps gated or malformed-permission tracks visible but disables playback',
       { ...track, id: 'object_conditions', stream_conditions: { follow_user_id: 7 } },
       { ...track, id: 'array_conditions', stream_conditions: [] },
       missingGate,
+      missingAccess,
     ] }),
     minIntervalMs: 0,
   })
 
   const results = await provider.search('gated')
-  assert.equal(results.length, 8)
+  assert.equal(results.length, 9)
   assert.equal(results.every((result) => result.capabilities.playback === 'none'), true)
   assert.equal(results.every((result) => result.quality === 'unknown'), true)
 })
@@ -141,16 +146,14 @@ test('rejects Audius metadata URLs that expose the API key', async () => {
   assert.equal((await provider.search('metadata'))[0].cover, 'night')
 })
 
-test('looks up tracks and resolves only public streams without exposing the API key', async () => {
+test('looks up tracks and resolves public streams through a fresh official gateway URL', async () => {
   const requests = []
   const provider = createAudiusProvider({
     apiKey: 'private-key',
+    now: () => 123456,
     fetchImpl: async (url, options) => {
       const parsed = new URL(url)
       requests.push({ url: parsed, options })
-      if (parsed.pathname.endsWith('/stream')) {
-        return Response.json({ data: 'https://stream.audius.example/D7KyD.mp3' })
-      }
       return Response.json({ data: track })
     },
     minIntervalMs: 0,
@@ -158,16 +161,13 @@ test('looks up tracks and resolves only public streams without exposing the API 
 
   assert.equal((await provider.lookup('D7KyD')).title, 'Hypermantra')
   const streamUrl = await provider.resolve('D7KyD')
-  assert.equal(streamUrl, 'https://stream.audius.example/D7KyD.mp3')
+  assert.equal(streamUrl, 'https://api.audius.co/v1/tracks/D7KyD/stream?skip_play_count=true&_t=123456')
   assert.equal(streamUrl.includes('private-key'), false)
-  const streamRequest = requests.find(({ url }) => url.pathname.endsWith('/stream'))
-  assert.equal(streamRequest.url.searchParams.get('no_redirect'), 'true')
-  assert.equal(streamRequest.url.searchParams.get('api_key'), 'private-key')
-  assert.equal(streamRequest.options.redirect, 'manual')
+  assert.equal(requests.some(({ url }) => url.pathname.endsWith('/stream')), false)
   assert.equal(requests.every(({ url }) => url.origin === 'https://api.audius.co'), true)
 })
 
-test('rejects gated, invalid, missing, and malformed stream responses', async () => {
+test('rejects gated, invalid, and missing Audius tracks before exposing playback', async () => {
   const gated = createAudiusProvider({
     apiKey: 'test-key',
     fetchImpl: async () => Response.json({ data: { ...track, is_stream_gated: true } }),
@@ -179,31 +179,7 @@ test('rejects gated, invalid, missing, and malformed stream responses', async ()
     return true
   })
 
-  const invalidStream = createAudiusProvider({
-    apiKey: 'test-key',
-    fetchImpl: async (url) => new URL(url).pathname.endsWith('/stream')
-      ? Response.json({ data: 'javascript:alert(1)' })
-      : Response.json({ data: track }),
-    minIntervalMs: 0,
-  })
-  await assert.rejects(() => invalidStream.resolve('D7KyD'), /invalid Audius stream response/)
-  await assert.rejects(() => invalidStream.lookup('../secret'), /invalid Audius track id/)
-
-  for (const [apiKey, data] of [
-    ['private/key', 'https://stream.audius.example/audio?api_key=private%2Fkey'],
-    ['private/key', 'https://stream.audius.example/audio?api_key=private%252Fkey'],
-    ['private/key', 'https://private:key@stream.audius.example/audio'],
-    ['private key', 'https://stream.audius.example/audio?api_key=private+key'],
-  ]) {
-    const leaked = createAudiusProvider({
-      apiKey,
-      fetchImpl: async (url) => new URL(url).pathname.endsWith('/stream')
-        ? Response.json({ data })
-        : Response.json({ data: track }),
-      minIntervalMs: 0,
-    })
-    await assert.rejects(() => leaked.resolve('D7KyD'), /invalid Audius stream response/)
-  }
+  await assert.rejects(() => gated.lookup('../secret'), /invalid Audius track id/)
 
   const missing = createAudiusProvider({
     apiKey: 'test-key',
@@ -232,23 +208,6 @@ test('binds lookup permissions to the requested Audius track id', async () => {
 
   await assert.rejects(() => provider.resolve('D7KyD'), /invalid Audius response/)
   assert.equal(streamCalls, 0)
-})
-
-test('classifies Audius stream permission and missing-track failures', async () => {
-  for (const [status, code] of [[403, 'CAPABILITY_UNAVAILABLE'], [404, 'TRACK_NOT_FOUND']]) {
-    const provider = createAudiusProvider({
-      apiKey: 'test-key',
-      fetchImpl: async (url) => new URL(url).pathname.endsWith('/stream')
-        ? new Response(null, { status })
-        : Response.json({ data: track }),
-      minIntervalMs: 0,
-    })
-
-    await assert.rejects(() => provider.resolve('D7KyD'), (error) => {
-      assert.equal(error.code, code)
-      return true
-    })
-  }
 })
 
 test('redacts the Audius API key from upstream request failures', async () => {

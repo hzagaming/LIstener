@@ -2,7 +2,7 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、相似推荐、本地音乐、播放队列、账号同步、离线应用壳和按来源授权的歌词与下载能力。
 
-当前版本：`0.9.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`0.10.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
@@ -75,7 +75,7 @@ gh workflow run deploy-pages.yml --ref main
 
 页面只依赖标准化的 `Track` 数据。音乐源运行在 Node.js 服务端：默认通过 Apple 提供公开歌曲检索和授权试听，通过 MusicBrainz 补充 CC0 录音元数据，通过 Wikimedia Commons 搜索开放音频，通过 Audius 提供创作者明确开放的公开音频，并通过实验性网易云 Provider 补充公开目录元数据和 ID 详情；配置官方 Key 后，YouTube Provider 使用 YouTube Data API v3 搜索音乐类视频，Web Catalog Provider 使用 Brave 官方搜索索引覆盖其余平台公开曲目页。没有合法播放地址的元数据会保留并明确标记为不可播放。所有服务端真实 Provider 共用受 Host 白名单、响应大小、重定向、超时、重试和取消约束的 HTTP Client。Pages 的四来源公共聚合位于 `src/services/publicMusicProvider.mjs`，Apple 适配器位于 `src/services/publicAppleProvider.mjs`，演示回退位于 `src/services/musicProvider.ts`。
 
-Node 与 Pages 公共模式都默认使用“完整与元数据”播放范围：隐藏 Apple 试听结果，保留 Wikimedia/Audius 完整音频和网易云/MusicBrainz 目录元数据；可切换为“仅完整可播”或“包含试听”。
+Node 与 Pages 公共模式默认展示全部结果并按实际播放把握排序：可直接播放的完整音频、可直接播放的官方试听、需要点击验证的完整候选、仅元数据。前半页严格可播优先，后半页按来源公平补齐；主搜索最多返回 50 首，可切换为“仅完整可播”或“无试听（含元数据）”。
 
 搜索前可以选择全部已接入平台或指定单一平台；结果可继续按歌曲名、歌手或专辑字段过滤，限制为 3 分钟内、3–5 分钟或 5 分钟以上，并按相关度、歌曲名、歌手或时长排序。流派、场景、年代和地区入口会提交可见的普通搜索词，结果仍全部来自真实 Provider，不在浏览器内生成歌曲。
 

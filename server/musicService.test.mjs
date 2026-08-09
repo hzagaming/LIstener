@@ -114,6 +114,26 @@ test('interleaves provider results so one source cannot fill the entire limit', 
   ])
 })
 
+test('returns direct playback before unresolved candidates and metadata without losing provider fairness', async () => {
+  const withPlayback = (source, id, playback, audioUrl = '') => ({
+    ...track(id), source, audioUrl, capabilities: { playback, lyrics: false, download: false },
+  })
+  const providers = [
+    { id: 'netease', search: async () => [withPlayback('netease', 'metadata-1', 'none'), withPlayback('netease', 'metadata-2', 'none')] },
+    { id: 'apple', search: async () => [withPlayback('apple', 'preview-1', 'preview', 'https://audio.example/preview-1'), withPlayback('apple', 'preview-2', 'preview', 'https://audio.example/preview-2')] },
+    { id: 'audius', search: async () => [withPlayback('audius', 'full-1', 'full'), withPlayback('audius', 'full-2', 'full')] },
+    { id: 'wikimedia', search: async () => [withPlayback('wikimedia', 'full-3', 'full', 'https://audio.example/full-3')] },
+  ]
+  const service = createMusicService({ providers })
+
+  assert.deepEqual((await service.search('song', 7)).map(({ source, id }) => `${source}:${id}`), [
+    'wikimedia:full-3',
+    'apple:preview-1', 'apple:preview-2',
+    'audius:full-1', 'netease:metadata-1',
+    'audius:full-2', 'netease:metadata-2',
+  ])
+})
+
 test('expires and bounds cached searches', async () => {
   let calls = 0
   let timestamp = 0

@@ -45,7 +45,8 @@ const sourceUrl = (track, apiKey) => {
   return `https://api.audius.co/v1/tracks/${track.id}`
 }
 
-const isPublicStream = (track) => (track.is_available === undefined || track.is_available === true)
+const isPublicStream = (track) => track.access?.stream === true
+  && track.is_available === true
   && track.is_streamable === true
   && track.is_stream_gated === false
   && track.stream_conditions == null
@@ -173,13 +174,9 @@ export const createAudiusProvider = ({
         })
       }
       const url = new URL(`tracks/${id}/stream`, endpoint)
-      url.searchParams.set('no_redirect', 'true')
-      const streamUrl = safePublicUrl((await request(url, signal, {
-        403: 'CAPABILITY_UNAVAILABLE',
-        404: 'TRACK_NOT_FOUND',
-      }))?.data, normalizedKey)
-      if (!streamUrl) throw new Error('invalid Audius stream response')
-      return streamUrl
+      url.searchParams.set('skip_play_count', 'true')
+      url.searchParams.set('_t', String(now()))
+      return url.toString()
     },
   }
 }

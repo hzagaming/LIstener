@@ -15,7 +15,7 @@ import {
 import {
   mergeRecommendationPages, nextPlayableRecommendation, recommendationSeed, shouldPrefetchRecommendations,
 } from './recommendationLogic.mjs'
-import { filterTracksByPlayback, refineSearchTracks, searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
+import { diversifyRankedTracks, filterTracksByPlayback, refineSearchTracks, searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
 import { downloadArtwork, musicProvider, publicBrowserMode, sourceLabel } from './services/musicProvider'
 import { accountApi, accountAvailable } from './services/account'
 import { mergeLibraryData, normalizeLibraryData } from './syncLogic.mjs'
@@ -220,7 +220,7 @@ function TrackRow({
   })
   const loading = visualState === 'resolving' || visualState === 'buffering'
   const playLabel = playbackUnavailable
-    ? `无法播放 ${track.title}`
+    ? `在 ${sourceLabel(track.source)} 打开 ${track.title}`
     : visualState === 'resolving'
       ? `取消加载 ${track.title}`
       : visualState === 'buffering'
@@ -228,7 +228,7 @@ function TrackRow({
         : visualState === 'playing' ? `暂停 ${track.title}` : `播放 ${track.title}`
   return (
     <div className={`track-row ${current ? 'track-row--current' : ''}`} role="listitem">
-      <button className="track-row__play" aria-label={playLabel} title={playbackUnavailable ? '来源未提供可播放音源' : undefined} aria-busy={loading} aria-pressed={visualState === 'playing'} disabled={playControlDisabled(track.capabilities.playback, Boolean(pending))} onClick={onPlay}>
+      <button className="track-row__play" aria-label={playLabel} title={playbackUnavailable ? '站内不可播放，点击前往已验证的来源页' : undefined} aria-busy={loading} aria-pressed={visualState === 'playing'} disabled={playbackUnavailable ? false : playControlDisabled(track.capabilities.playback, Boolean(pending))} onClick={onPlay}>
         <span>{String(index + 1).padStart(2, '0')}</span>{loading ? <LoaderCircle className="spin" /> : visualState === 'playing' ? <Pause /> : <Play fill="currentColor" />}
       </button>
       <Cover name={track.cover} size="small" />
@@ -236,10 +236,12 @@ function TrackRow({
         <strong>{track.title}</strong>
         <span>{track.artist}<small className="track-row__source-mobile"> · {sourceLabel(track.source)}</small></span>
         {context && <small className="track-row__context">{context}</small>}
-        {playbackUnavailable && <small className="track-row__availability">仅元数据 · 不可播放</small>}
+        {playbackUnavailable
+          ? <small className="track-row__availability">站内不可播 · 点击左侧前往来源</small>
+          : <small className={`track-row__availability track-row__availability--${track.capabilities.playback}`}>{track.capabilities.playback === 'full' ? track.audioUrl ? '完整可播' : '完整音源 · 点击验证' : track.audioUrl ? '试听可播' : '试听音源 · 点击验证'}</small>}
       </div>
       <span className="track-row__album">{track.album}</span>
-      <div className="track-row__badges"><SourceBadge track={track} /><span className="quality-badge">{qualityLabels[track.quality]}</span></div>
+      <div className="track-row__badges"><SourceBadge track={track} /><span className="quality-badge">{track.capabilities.playback === 'full' ? '完整' : track.capabilities.playback === 'preview' ? '试听' : qualityLabels[track.quality]}</span></div>
       <span className="track-row__duration">{formatTime(track.duration)}</span>
       <div className="track-row__actions">
         <button className="icon-button" aria-label={`加入歌单 ${track.title}`} title="加入歌单" onClick={onPlaylist}><ListPlus /></button>
@@ -268,7 +270,7 @@ function App() {
   const [searchRevision, setSearchRevision] = useState(0)
   const [sourceFilter, setSourceFilter] = useState<'all' | MusicSource>('all')
   const [searchSource, setSearchSource] = useState<'all' | MusicSource>('all')
-  const [playbackFilter, setPlaybackFilter] = useState<PlaybackFilter>('no-preview')
+  const [playbackFilter, setPlaybackFilter] = useState<PlaybackFilter>('all')
   const [searchDomain, setSearchDomain] = useState<SearchDomain>('all')
   const [searchDuration, setSearchDuration] = useState<SearchDuration>('all')
   const [searchSort, setSearchSort] = useState<SearchSort>('relevance')
@@ -712,7 +714,7 @@ function App() {
     setIsSearching(true)
     const timeout = window.setTimeout(async () => {
       try {
-        const found = await musicProvider.searchPage(query, { provider: searchSource }, controller.signal)
+        const found = await musicProvider.searchPage(query, { provider: searchSource, pageSize: 50 }, controller.signal)
         if (active && requestId === searchRequestRef.current) setResults(found.tracks)
       } catch (error) {
         const fallback = searchFallbackTracks<Track>(error)
@@ -739,17 +741,23 @@ function App() {
     () => sourceFilter === 'all' ? results : results.filter((track) => track.source === sourceFilter),
     [results, sourceFilter],
   )
-  const refinedResults = useMemo(
-    () => refineSearchTracks(sourceResults, {
+  const refinedResults = useMemo(() => {
+    const refined = refineSearchTracks(sourceResults, {
       query: resultQuery, domain: searchDomain, duration: searchDuration, sort: searchSort,
-    }),
-    [resultQuery, searchDomain, searchDuration, searchSort, sourceResults],
-  )
+    })
+    return searchSort === 'relevance' ? diversifyRankedTracks(refined, refined.length) : refined
+  }, [resultQuery, searchDomain, searchDuration, searchSort, sourceResults])
   const displayResults = useMemo(
     () => filterTracksByPlayback(refinedResults, playbackFilter),
     [refinedResults, playbackFilter],
   )
   const hiddenByFilters = sourceResults.length - displayResults.length
+  const resultPlaybackCounts = useMemo(() => displayResults.reduce((counts, track) => {
+    if (track.capabilities.playback === 'full') counts.full += 1
+    else if (track.capabilities.playback === 'preview') counts.preview += 1
+    if (track.capabilities.playback !== 'none' && track.audioUrl) counts.direct += 1
+    return counts
+  }, { direct: 0, full: 0, preview: 0 }), [displayResults])
   const resultSources = useMemo(() => [...new Set(results.map((track) => track.source))], [results])
   const publicSearchFallback = searchDegraded && resultSources.some((source) => publicBrowserSources.has(source))
   const demoSearchFallback = searchDegraded && resultSources.some((source) => ['demo', 'fixture'].includes(source))
@@ -1125,7 +1133,12 @@ function App() {
       return
     }
     const target = preferResolvedCurrent(track, current)
-    if (target.capabilities.playback === 'none') return showNotice('该来源没有可用音源')
+    if (target.capabilities.playback === 'none') {
+      cancelPendingPlay()
+      window.open(target.sourceUrl, '_blank', 'noopener,noreferrer')
+      showNotice(`已打开 ${sourceLabel(target.source)} 来源页`)
+      return
+    }
     if (continuationPlaylistId !== continuousPlaylistIdRef.current) recommendationPrefetchKeyRef.current = ''
     continuousPlaylistIdRef.current = continuationPlaylistId
     setContinuousPlaylistId(continuationPlaylistId)
@@ -1992,14 +2005,14 @@ function App() {
               </div>
               <div className="playback-filters" role="group" aria-label="播放范围筛选">
                 <span>播放范围</span>
-                <button aria-pressed={playbackFilter === 'no-preview'} className={playbackFilter === 'no-preview' ? 'active' : ''} onClick={() => setPlaybackFilter('no-preview')}>完整与元数据</button>
+                <button aria-pressed={playbackFilter === 'all'} className={playbackFilter === 'all' ? 'active' : ''} onClick={() => setPlaybackFilter('all')}>全部 · 可播优先</button>
                 <button aria-pressed={playbackFilter === 'full'} className={playbackFilter === 'full' ? 'active' : ''} onClick={() => setPlaybackFilter('full')}>仅完整可播</button>
-                <button aria-pressed={playbackFilter === 'all'} className={playbackFilter === 'all' ? 'active' : ''} onClick={() => setPlaybackFilter('all')}>包含试听</button>
+                <button aria-pressed={playbackFilter === 'no-preview'} className={playbackFilter === 'no-preview' ? 'active' : ''} onClick={() => setPlaybackFilter('no-preview')}>无试听（含元数据）</button>
               </div>
             </div>
             <section className="results-section">
               {searchDegraded && <div className="search-warning" role="alert"><Sparkles /><span><strong>{publicSearchFallback ? '聚合服务离线，已切换公共搜索' : demoSearchFallback ? '聚合服务异常，当前为演示结果' : '所选音乐源暂不可用'}</strong><small>{publicSearchFallback ? '当前由 Apple Music、Audius、MusicBrainz 与 Wikimedia Commons 提供可用结果。' : demoSearchFallback ? '真实音乐源暂时不可用，以下为演示数据。' : '没有返回回退数据，请检查服务配置后重试。'}</small></span><button onClick={() => setSearchRevision((value) => value + 1)}>重试</button></div>}
-              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索结果 ${displayResults.length} 首` : demoSearchFallback ? `演示结果 ${displayResults.length} 首` : searchDegraded ? '搜索失败' : `共 ${displayResults.length} 首${hiddenByFilters ? ` · 已过滤 ${hiddenByFilters} 首` : ''}`}</span></div>
+              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索 · 直接可播 ${resultPlaybackCounts.direct} 首 · 共 ${displayResults.length} 首` : demoSearchFallback ? `演示结果 ${displayResults.length} 首` : searchDegraded ? '搜索失败' : `直接可播 ${resultPlaybackCounts.direct} 首 · 完整候选 ${resultPlaybackCounts.full} 首 · 共 ${displayResults.length} 首${hiddenByFilters ? ` · 已过滤 ${hiddenByFilters} 首` : ''}`}</span></div>
               <div className="track-list" role="list">
                 {displayResults.length ? displayResults.map((track, index) => (
                   <TrackRow
@@ -2160,7 +2173,7 @@ function App() {
 
               <section className="account-panel settings-panel settings-panel--project">
                 <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
-                <p>Listener 0.9.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <p>Listener 0.10.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
                 <div className="project-links">
                   {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
                 </div>

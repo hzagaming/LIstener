@@ -287,6 +287,8 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .track-row__title span, .track-row__album, .track-row__duration { font-size: 11px; color: #69665f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track-row__context { color: #74654f; font-size: 10px; font-weight: 600; }
 .track-row__availability { color: #8d4934; font-size: 10px; font-weight: 600; }
+.track-row__availability--full { color: #397153; }
+.track-row__availability--preview { color: #8b641f; }
 .track-row__source-mobile { display: none; font: inherit; }
 .track-row__duration { font-variant-numeric: tabular-nums; }
 .track-row__badges { display: flex; align-items: center; gap: 5px; min-width: 0; }

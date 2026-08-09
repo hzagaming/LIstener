@@ -16,7 +16,7 @@ const track = (source, id, playback = 'none') => ({
   capabilities: { playback, lyrics: false, download: false },
 })
 
-const appleTrack = track('apple', '1', 'preview')
+const appleTrack = { ...track('apple', '1', 'preview'), audioUrl: 'https://audio-ssl.itunes.apple.com/apple.m4a' }
 const fallbackTrack = track('demo', 'fallback', 'full')
 const fallback = {
   search: async () => [fallbackTrack],
@@ -132,14 +132,19 @@ test('searches Audius directly with honest pagination, playback, and download ca
 
 test('resolves refreshed Audius streams and returns only explicitly authorized downloads', async () => {
   const requests = []
-  const provider = createPublicMusicProvider({ apple, fallback, fetchImpl: async (input, options = {}) => {
-    const url = new URL(input)
-    requests.push({ url, options })
-    return Response.json({ data: audiusFixture })
-  } })
+  const provider = createPublicMusicProvider({
+    apple,
+    fallback,
+    now: () => 123456,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(input)
+      requests.push({ url, options })
+      return Response.json({ data: audiusFixture })
+    },
+  })
   const stale = { ...track('audius', 'D7KyD', 'full'), capabilities: { playback: 'full', lyrics: false, download: true } }
 
-  assert.equal(await provider.resolve(stale), 'https://api.audius.co/v1/tracks/D7KyD/stream')
+  assert.equal(await provider.resolve(stale), 'https://api.audius.co/v1/tracks/D7KyD/stream?skip_play_count=true&_t=123456')
   assert.deepEqual(await provider.download(stale), { url: audiusFixture.download.url, filename: 'Hypermantra.wav' })
   assert.equal(requests.some(({ url }) => url.pathname.endsWith('/stream')), false)
   assert.equal(requests.some(({ url }) => url.searchParams.has('api_key')), false)

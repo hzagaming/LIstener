@@ -1,6 +1,6 @@
 import { identifyMusicInput } from '../../server/platforms.mjs'
 import { abortableDelay, createRequestSignal } from '../requestPolicy.mjs'
-import { createSearchFallbackError, searchFallbackTracks } from '../searchLogic.mjs'
+import { createSearchFallbackError, diversifyRankedTracks, playbackRank, searchFallbackTracks } from '../searchLogic.mjs'
 
 const AUDIUS_API = 'https://api.audius.co/v1/'
 const MUSICBRAINZ_API = 'https://musicbrainz.org/ws/2/recording/'
@@ -175,21 +175,23 @@ const normalizeWikimedia = (page) => {
 const interleave = (pages, limit) => {
   const merged = []
   const seen = new Set()
-  for (let index = 0; merged.length < limit; index += 1) {
-    let progressed = false
-    for (const page of pages) {
-      const track = page.tracks[index]
-      if (!track) continue
-      progressed = true
-      const key = `${track.source}:${track.id}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      merged.push(track)
-      if (merged.length === limit) break
+  for (const rank of [0, 1, 2, 3, 4]) {
+    const tier = pages.map((page) => page.tracks.filter((track) => playbackRank(track) === rank))
+    for (let index = 0; ; index += 1) {
+      let progressed = false
+      for (const tracks of tier) {
+        const track = tracks[index]
+        if (!track) continue
+        progressed = true
+        const key = `${track.source}:${track.id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        merged.push(track)
+      }
+      if (!progressed) break
     }
-    if (!progressed) break
   }
-  return merged
+  return diversifyRankedTracks(merged, limit)
 }
 
 const filename = (title, url) => {
@@ -374,7 +376,10 @@ export const createPublicMusicProvider = ({
         if (!publicAudiusStream(data)) {
           throw Object.assign(new Error('Audius track is not publicly streamable'), { code: 'CAPABILITY_UNAVAILABLE' })
         }
-        return new URL(`tracks/${track.id}/stream`, AUDIUS_API).toString()
+        const url = new URL(`tracks/${track.id}/stream`, AUDIUS_API)
+        url.searchParams.set('skip_play_count', 'true')
+        url.searchParams.set('_t', String(now()))
+        return url.toString()
       }
       if (track.source === 'wikimedia') {
         return safeHttpsUrl(track.audioUrl, 'upload.wikimedia.org') || (await lookupWikimedia(track.id, signal)).audioUrl

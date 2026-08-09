@@ -1,4 +1,5 @@
 import { identifyMusicInput } from '../../server/platforms.mjs'
+import { verifyPublicAudioUrl } from '../mediaProbe.mjs'
 import { abortableDelay, createRequestSignal } from '../requestPolicy.mjs'
 import { createSearchFallbackError, diversifyRankedTracks, playbackRank, searchFallbackTracks } from '../searchLogic.mjs'
 
@@ -205,6 +206,7 @@ export const createPublicMusicProvider = ({
   fallback,
   fetchImpl = globalThis.fetch,
   musicBrainzIntervalMs = 1_000,
+  requestTimeoutMs = 4_000,
   statusTimeoutMs = 4_000,
   now = Date.now,
   waitImpl = abortableDelay,
@@ -213,13 +215,16 @@ export const createPublicMusicProvider = ({
   if (!Number.isFinite(musicBrainzIntervalMs) || musicBrainzIntervalMs < 0 || musicBrainzIntervalMs > 60_000) {
     throw new Error('valid MusicBrainz interval is required')
   }
+  if (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 100 || requestTimeoutMs > 30_000) {
+    throw new Error('valid request timeout is required')
+  }
   if (!Number.isInteger(statusTimeoutMs) || statusTimeoutMs < 1 || statusTimeoutMs > 30_000) {
     throw new Error('valid status timeout is required')
   }
   let nextMusicBrainzRequestAt = 0
   let musicBrainzQueue = Promise.resolve()
 
-  const request = async (url, signal, label, timeoutMs = 8_000) => {
+  const request = async (url, signal, label, timeoutMs = requestTimeoutMs) => {
     const response = await fetchImpl(url, {
       credentials: 'omit',
       headers: { Accept: 'application/json' },
@@ -379,7 +384,7 @@ export const createPublicMusicProvider = ({
         const url = new URL(`tracks/${track.id}/stream`, AUDIUS_API)
         url.searchParams.set('skip_play_count', 'true')
         url.searchParams.set('_t', String(now()))
-        return url.toString()
+        return verifyPublicAudioUrl(url.toString(), { fetchImpl, signal, now })
       }
       if (track.source === 'wikimedia') {
         return safeHttpsUrl(track.audioUrl, 'upload.wikimedia.org') || (await lookupWikimedia(track.id, signal)).audioUrl

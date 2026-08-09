@@ -130,8 +130,9 @@ test('searches Audius directly with honest pagination, playback, and download ca
   assert.deepEqual(result.capabilities, { playback: 'full', lyrics: false, download: true })
 })
 
-test('resolves refreshed Audius streams and returns only explicitly authorized downloads', async () => {
+test('resolves only byte-verified Audius streams and returns explicitly authorized downloads', async () => {
   const requests = []
+  let streamAttempts = 0
   const provider = createPublicMusicProvider({
     apple,
     fallback,
@@ -139,14 +140,26 @@ test('resolves refreshed Audius streams and returns only explicitly authorized d
     fetchImpl: async (input, options = {}) => {
       const url = new URL(input)
       requests.push({ url, options })
+      if (url.pathname.endsWith('/stream')) {
+        streamAttempts += 1
+        return streamAttempts === 1
+          ? new Response('blocked', { status: 403, headers: { 'content-type': 'text/plain' } })
+          : {
+            ok: true,
+            status: 206,
+            url: 'https://media.audius.example/Hypermantra.mp3?signature=safe',
+            headers: new Headers({ 'content-type': 'audio/mpeg' }),
+            body: { cancel: async () => undefined },
+          }
+      }
       return Response.json({ data: audiusFixture })
     },
   })
   const stale = { ...track('audius', 'D7KyD', 'full'), capabilities: { playback: 'full', lyrics: false, download: true } }
 
-  assert.equal(await provider.resolve(stale), 'https://api.audius.co/v1/tracks/D7KyD/stream?skip_play_count=true&_t=123456')
+  assert.equal(await provider.resolve(stale), 'https://media.audius.example/Hypermantra.mp3?signature=safe')
   assert.deepEqual(await provider.download(stale), { url: audiusFixture.download.url, filename: 'Hypermantra.wav' })
-  assert.equal(requests.some(({ url }) => url.pathname.endsWith('/stream')), false)
+  assert.equal(requests.filter(({ url }) => url.pathname.endsWith('/stream')).length, 2)
   assert.equal(requests.some(({ url }) => url.searchParams.has('api_key')), false)
 
   const gated = createPublicMusicProvider({
@@ -156,6 +169,26 @@ test('resolves refreshed Audius streams and returns only explicitly authorized d
   })
   await assert.rejects(() => gated.resolve(stale), (error) => error.code === 'CAPABILITY_UNAVAILABLE')
   await assert.rejects(() => gated.download(stale), (error) => error.code === 'CAPABILITY_UNAVAILABLE')
+})
+
+test('bounds aggregate public search so one stalled source cannot delay healthy results', async () => {
+  const provider = createPublicMusicProvider({
+    apple,
+    fallback,
+    requestTimeoutMs: 100,
+    musicBrainzIntervalMs: 0,
+    fetchImpl: async (_input, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
+    }),
+  })
+
+  const result = await Promise.race([
+    provider.searchPage('fast result', { pageSize: 5 }),
+    new Promise((resolve) => setTimeout(() => resolve('still-pending'), 500)),
+  ])
+
+  assert.notEqual(result, 'still-pending')
+  assert.deepEqual(result.tracks, [appleTrack])
 })
 
 test('normalizes MusicBrainz metadata and Wikimedia open audio while rejecting unsafe media fields', async () => {

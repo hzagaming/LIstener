@@ -535,9 +535,9 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .playlist-grid { display: flex; overflow-x: auto; margin-right: -18px; padding-right: 18px; scrollbar-width: none; scroll-snap-type: x proximity; overscroll-behavior-inline: contain; }
   .playlist-card { min-width: 220px; scroll-snap-align: start; }
   .page--search, .page--library, .page--account, .page--settings { padding: 0 18px 40px; }
-  .search-hero { padding: 40px 0 32px; }
+  .search-hero { padding: 24px 0 12px; }
   .search-hero h1, .library-heading h1 { font-size: 44px; }
-  .search-hero h1 { font-size: clamp(34px, 10.5vw, 44px); white-space: nowrap; }
+  .search-hero h1 { margin: 8px 0 14px; font-size: clamp(34px, 10.5vw, 44px); white-space: nowrap; }
   .track-row { min-height: 84px; grid-template-columns: 40px 38px minmax(90px, 1fr); gap: 6px 9px; padding: 7px 0; }
   .track-row .cover { width: 38px; height: 38px; }
   .track-row__album, .track-row__badges, .track-row__duration { display: none; }
@@ -557,9 +557,13 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .account-heading { padding-top: 40px; }
   .account-heading h1 { font-size: 44px; }
   .identification { grid-template-columns: 1fr; gap: 8px; }
-  .advanced-search { grid-template-columns: 1fr 1fr; }
+  .advanced-search { grid-template-columns: 1fr 1fr; margin-top: 14px; }
   .advanced-search > button { grid-column: 1 / -1; justify-self: start; }
+  .search-explore { margin-top: 12px; }
   .search-explore button { min-height: 36px; }
+  .id-resolver { margin-top: 14px; }
+  .source-filters { margin-top: 16px; }
+  .playback-filters { margin-top: 8px; }
   .section-heading { align-items: flex-start; gap: 12px; }
   .results-section .section-heading { flex-direction: column; }
   .results-section .section-heading > div { width: 100%; }
@@ -594,8 +598,6 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .choice-buttons { grid-template-columns: 1fr; }
   .settings-field { grid-template-columns: 1fr; gap: 7px; }
   .project-links { grid-template-columns: 1fr; }
-  .advanced-search { grid-template-columns: 1fr; }
-  .advanced-search > button { grid-column: auto; width: 100%; }
   .search-explore__group { grid-template-columns: 38px 1fr; align-items: start; }
 }
 

@@ -1,5 +1,11 @@
 export const playableTracks = (tracks) => tracks.filter((track) => track.capabilities.playback !== 'none')
 
+export const playbackUnavailableTrack = (track) => ({
+  ...track,
+  audioUrl: '',
+  capabilities: { ...track.capabilities, playback: 'none' },
+})
+
 const shuffleTracks = (tracks, random) => {
   const shuffled = [...tracks]
   for (let index = shuffled.length - 1; index > 0; index -= 1) {

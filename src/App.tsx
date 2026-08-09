@@ -9,7 +9,7 @@ import { playlists, tracks as initialTracks } from './data/catalog'
 import { localFileStem, readLocalLyrics, selectLocalAudioFiles } from './localFiles.mjs'
 import {
   autoplayMediaMatches, collectionPlaybackPlan, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
-  mediaErrorAction, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
+  mediaErrorAction, playbackUnavailableTrack, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 import {
@@ -1126,6 +1126,22 @@ function App() {
     setIsBuffering(true)
   }
 
+  const markPlaybackUnavailable = (track: Track) => {
+    const unavailable = playbackUnavailableTrack(track) as Track
+    const key = trackKey(unavailable)
+    const update = (item: Track) => trackKey(item) === key ? unavailable : item
+    setCurrent((previous) => trackKey(previous) === key ? unavailable : previous)
+    setResults((previous) => previous.map(update))
+    setHomeTracks((previous) => previous.map(update))
+    setQueue((previous) => playableTracks(previous.map(update)))
+    setLiked((previous) => previous.has(key) ? new Map(previous).set(key, unavailable) : previous)
+    setUserPlaylists((previous) => previous.map((playlist) => ({ ...playlist, tracks: playlist.tracks.map(update) })))
+    setPlaylistRecommendations((previous) => previous.map((recommendation) => ({
+      ...recommendation,
+      track: update(recommendation.track),
+    })))
+  }
+
   const resolveAndPlay = async (track: Track, list?: Track[], mode: PlayMode = 'toggle', continuationPlaylistId: string | null = null) => {
     if (shouldCancelPendingTrack(trackKey(track), pendingTrackKeyRef.current)) {
       cancelPendingPlay()
@@ -1167,7 +1183,8 @@ function App() {
     } catch (error) {
       if (requestId === playRequestRef.current && !controller.signal.aborted) {
         const restricted = error instanceof Error && 'code' in error && error.code === 'CAPABILITY_UNAVAILABLE'
-        showNotice(restricted ? '该歌曲当前不允许公开播放' : '这首歌暂时没有可用音源')
+        if (restricted) markPlaybackUnavailable(target)
+        showNotice(restricted ? '音源验证失败，已改为来源跳转' : '这首歌暂时没有可用音源')
       }
     } finally {
       if (resolveControllerRef.current === controller) resolveControllerRef.current = null
@@ -1865,7 +1882,7 @@ function App() {
         </div>
       </div>
 
-      {mobileNavOpen && <button className="scrim" tabIndex={-1} onClick={closeMobileNav} aria-label="关闭菜单" />}
+      {mobileNavOpen && <button className="scrim" tabIndex={-1} onClick={closeMobileNav} aria-label="关闭侧边导航" />}
 
       <main className="main-content" {...(queueOpen || mobileNavOpen || dialogOpen ? { inert: '' } : {})}>
         <header className="topbar">
@@ -1977,7 +1994,7 @@ function App() {
                 <label>结果排序<select value={searchSort} onChange={(event) => setSearchSort(event.target.value as SearchSort)}><option value="relevance">相关度</option><option value="title">歌曲名</option><option value="artist">歌手</option><option value="duration">时长</option></select></label>
                 {(searchSource !== 'all' || searchDomain !== 'all' || searchDuration !== 'all' || searchSort !== 'relevance') && <button onClick={() => { setSearchSource('all'); setSearchDomain('all'); setSearchDuration('all'); setSearchSort('relevance') }}>清除筛选</button>}
               </div>
-              <details className="search-explore" open>
+              <details className="search-explore">
                 <summary>探索更多音乐领域</summary>
                 <div>{searchExplorations.map((group) => <div className="search-explore__group" key={group.label}><strong>{group.label}</strong><span>{group.terms.map((term) => <button key={term.label} title={`搜索 ${term.query}`} onClick={() => exploreSearch(term.query)}>{term.label}</button>)}</span></div>)}</div>
               </details>
@@ -2173,7 +2190,7 @@ function App() {
 
               <section className="account-panel settings-panel settings-panel--project">
                 <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
-                <p>Listener 0.10.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <p>Listener 0.10.1 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
                 <div className="project-links">
                   {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
                 </div>
@@ -2352,7 +2369,7 @@ function App() {
               {!queue.length && <div className="compact-empty"><ListMusic /><span>播放队列为空</span></div>}
             </div>
           </div>
-          <button className="queue-scrim" tabIndex={-1} onClick={closeQueue} aria-label="关闭播放队列" />
+          <button className="queue-scrim" tabIndex={-1} onClick={closeQueue} aria-label="关闭队列背景" />
         </>
       )}
 
@@ -2371,7 +2388,7 @@ function App() {
               <button className="primary-button" type="submit"><Plus />{playlistModalTrack ? '创建并加入' : '创建歌单'}</button>
             </form>
           </section>
-          <button className="dialog-scrim" tabIndex={-1} onClick={closeDialog} aria-label="关闭歌单窗口" />
+          <button className="dialog-scrim" tabIndex={-1} onClick={closeDialog} aria-label="关闭歌单窗口背景" />
         </>
       )}
 
@@ -2382,7 +2399,7 @@ function App() {
             <span className="visually-hidden" role="status" aria-live="polite">{lyricsLoading ? '正在加载歌词' : '歌词已加载'}</span>
             <pre className="lyrics-content">{lyricsLoading ? '正在加载歌词…' : lyricsText}</pre>
           </section>
-          <button className="dialog-scrim" tabIndex={-1} onClick={closeDialog} aria-label="关闭歌词" />
+          <button className="dialog-scrim" tabIndex={-1} onClick={closeDialog} aria-label="关闭歌词窗口背景" />
         </>
       )}
 

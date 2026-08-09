@@ -12,6 +12,7 @@ type DurationTrackLike = {
 }
 
 export declare const playableTracks: <T extends TrackLike>(tracks: readonly T[]) => T[]
+export declare const playbackUnavailableTrack: <T extends TrackLike>(track: T) => T
 export declare const collectionPlaybackPlan: <T extends TrackLike>(
   tracks: readonly T[],
   mode: 'order' | 'shuffle' | 'one',

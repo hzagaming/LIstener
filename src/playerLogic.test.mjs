@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   autoplayMediaMatches, collectionPlaybackPlan, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
-  mediaErrorAction, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
+  mediaErrorAction, playbackUnavailableTrack, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 
@@ -26,6 +26,19 @@ test('keeps only playable tracks in their original order', () => {
   const tracks = [track('1'), track('2', 'none'), track('3', 'preview')]
 
   assert.deepEqual(playableTracks(tracks).map(({ id }) => id), ['1', '3'])
+})
+
+test('demotes a failed remote candidate without mutating its metadata', () => {
+  const candidate = track('1', 'full', 'https://audio.example/1.mp3')
+  candidate.capabilities.download = true
+
+  assert.deepEqual(playbackUnavailableTrack(candidate), {
+    ...candidate,
+    audioUrl: '',
+    capabilities: { playback: 'none', download: true },
+  })
+  assert.equal(candidate.capabilities.playback, 'full')
+  assert.equal(candidate.audioUrl, 'https://audio.example/1.mp3')
 })
 
 test('builds ordered, shuffled, and single-repeat collection playback plans', () => {

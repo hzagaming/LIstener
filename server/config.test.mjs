@@ -11,7 +11,7 @@ test('loads bounded music defaults without secrets', () => {
     enableFixture: false,
     enableNetease: true,
     musicBrainzContact: 'https://github.com/hzagaming/LIstener',
-    providerTimeoutMs: 8_000,
+    providerTimeoutMs: 4_000,
     responseLimitBytes: 2_097_152,
     maxRetries: 1,
     maxConcurrentProviders: 4,

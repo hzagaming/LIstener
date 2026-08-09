@@ -63,7 +63,7 @@ export const readMusicConfig = (env = process.env) => {
     enableFixture: boolean(env, 'ENABLE_LOCAL_FIXTURE'),
     enableNetease: boolean(env, 'ENABLE_NETEASE', true),
     musicBrainzContact: text(env, 'MUSICBRAINZ_CONTACT', 'https://github.com/hzagaming/LIstener'),
-    providerTimeoutMs: integer(env, 'MUSIC_PROVIDER_TIMEOUT_MS', 8_000, 100, 30_000),
+    providerTimeoutMs: integer(env, 'MUSIC_PROVIDER_TIMEOUT_MS', 4_000, 100, 30_000),
     responseLimitBytes: integer(env, 'MUSIC_PROVIDER_RESPONSE_LIMIT_BYTES', 2_097_152, 1_024, 10_485_760),
     maxRetries: integer(env, 'MUSIC_MAX_RETRIES', 1, 0, 1),
     maxConcurrentProviders: integer(env, 'MUSIC_MAX_CONCURRENT_PROVIDERS', 4, 1, 10),

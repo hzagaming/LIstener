@@ -12,6 +12,21 @@ test('the document icon points to a shipped public asset', async () => {
   await access(new URL(`../public${iconPath}`, import.meta.url))
 })
 
+test('release metadata stays synchronized across the app shell', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  const lock = JSON.parse(await readFile(new URL('../package-lock.json', import.meta.url), 'utf8'))
+  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8')
+  const worker = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')
+
+  assert.equal(manifest.version, '0.10.1')
+  assert.equal(lock.version, manifest.version)
+  assert.equal(lock.packages[''].version, manifest.version)
+  assert.match(app, /Listener 0\.10\.1/)
+  assert.match(readme, /当前版本：`0\.10\.1`/)
+  assert.match(worker, /listener-shell-v0\.10\.1/)
+})
+
 test('the production build targets the GitHub Pages project path', async () => {
   const configFile = fileURLToPath(new URL('../vite.config.ts', import.meta.url))
   const [build, preview] = await Promise.all([
@@ -127,6 +142,25 @@ test('metadata-only search results open their verified source instead of becomin
   assert.match(app, /站内不可播 · 点击左侧前往来源/)
 })
 
+test('failed playback verification becomes a source link instead of an endless reconnect loop', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const provider = await readFile(new URL('./services/musicProvider.ts', import.meta.url), 'utf8')
+  const resolveAndPlay = app.slice(app.indexOf('const resolveAndPlay'), app.indexOf('const startCurrent'))
+
+  assert.match(provider, /track\.source === 'audius'[\s\S]*?verifyPublicAudioUrl\(resolvedUrl/)
+  assert.match(resolveAndPlay, /restricted[\s\S]*?markPlaybackUnavailable\(target\)/)
+  assert.match(app, /音源验证失败，已改为来源跳转/)
+})
+
+test('overlay scrims expose distinct accessible close actions', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+
+  assert.match(app, /className="scrim"[^>]*aria-label="关闭侧边导航"/)
+  assert.match(app, /className="queue-scrim"[^>]*aria-label="关闭队列背景"/)
+  assert.match(app, /className="dialog-scrim"[^>]*aria-label="关闭歌单窗口背景"/)
+  assert.match(app, /className="dialog-scrim"[^>]*aria-label="关闭歌词窗口背景"/)
+})
+
 test('playable-first search keeps its TypeScript declaration in sync', async () => {
   const declaration = await readFile(new URL('./searchLogic.d.mts', import.meta.url), 'utf8')
 
@@ -201,6 +235,17 @@ test('mobile result summaries stack without squeezing the search heading', async
 
   assert.match(mobile, /\.results-section \.section-heading\s*\{[^}]*flex-direction:\s*column/)
   assert.match(mobile, /\.results-section \.section-heading > div\s*\{[^}]*width:\s*100%/)
+})
+
+test('secondary exploration stays collapsed so mobile search results remain near the first viewport', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+  const narrow = styles.slice(styles.indexOf('@media (max-width: 420px)'), styles.indexOf('@media (max-width: 350px)'))
+
+  assert.match(app, /<details className="search-explore">/)
+  assert.doesNotMatch(app, /<details className="search-explore" open>/)
+  assert.doesNotMatch(narrow, /\.advanced-search\s*\{[^}]*grid-template-columns:\s*1fr/)
+  assert.match(styles, /@media \(max-width: 820px\)[\s\S]*?\.search-hero\s*\{[^}]*padding:\s*24px 0 12px/)
 })
 
 test('ID resolution aborts an active keyword search', async () => {

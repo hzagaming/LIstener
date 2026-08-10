@@ -51,6 +51,12 @@ const isPublicStream = (track) => track.access?.stream === true
   && track.is_stream_gated === false
   && track.stream_conditions == null
 
+const streamUrl = (id) => {
+  const url = new URL(`tracks/${id}/stream`, DEFAULT_BASE_URL)
+  url.searchParams.set('skip_play_count', 'true')
+  return url.toString()
+}
+
 const normalizeTrack = (track, apiKey) => {
   const id = typeof track?.id === 'string' ? track.id : ''
   const title = typeof track?.title === 'string' ? track.title.trim() : ''
@@ -65,7 +71,7 @@ const normalizeTrack = (track, apiKey) => {
     album: String(track.album_backlink?.playlist_name || 'Audius'),
     duration: Number.isFinite(duration) ? Math.max(0, Math.round(duration)) : 0,
     source: 'audius',
-    audioUrl: '',
+    audioUrl: playable ? streamUrl(id) : '',
     cover: safePublicUrl(track.artwork?.['480x480'], apiKey)
       || safePublicUrl(track.artwork?.['150x150'], apiKey)
       || 'night',

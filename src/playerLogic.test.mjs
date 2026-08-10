@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   autoplayMediaMatches, collectionPlaybackPlan, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
-  mediaErrorAction, playbackUnavailableTrack, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
+  mediaErrorAction, nextDirectFullTrack, playbackUnavailableTrack, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 
@@ -39,6 +39,19 @@ test('demotes a failed remote candidate without mutating its metadata', () => {
   })
   assert.equal(candidate.capabilities.playback, 'full')
   assert.equal(candidate.audioUrl, 'https://audio.example/1.mp3')
+})
+
+test('advances past failed candidates to the next direct full track without looping', () => {
+  const tracks = [
+    track('1', 'full', 'https://audio.example/1.mp3'),
+    track('2', 'full'),
+    track('3', 'preview', 'https://audio.example/3.mp3'),
+    track('4', 'full', 'https://audio.example/4.mp3'),
+  ]
+
+  assert.equal(nextDirectFullTrack(tracks, 'test:1'), tracks[3])
+  assert.equal(nextDirectFullTrack(tracks, 'test:4'), null)
+  assert.equal(nextDirectFullTrack(tracks, 'test:missing'), null)
 })
 
 test('builds ordered, shuffled, and single-repeat collection playback plans', () => {

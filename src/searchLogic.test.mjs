@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  createSearchFallbackError, diversifyRankedTracks, filterTracksByPlayback, parseSearchPage, prioritizePlayableTracks, refineSearchTracks,
-  searchFallbackTracks, searchInputMode,
+  createSearchFallbackError, diversifyRankedTracks, filterTracksByPlayback, mergeSearchPages, parseSearchPage, prioritizePlayableTracks, refineSearchTracks,
+  searchFallbackTracks, searchInputMode, summarizePlaybackTracks,
 } from './searchLogic.mjs'
 
 test('carries fallback results without disguising an upstream search failure', () => {
@@ -27,17 +27,29 @@ test('separates searchable text, provider URLs, and overlong queries', () => {
   assert.equal(searchInputMode(`https://example.com/${'x'.repeat(200)}`), 'identify')
 })
 
-test('hides previews by default while preserving full tracks and metadata', () => {
+test('keeps only direct full audio in the complete-playback filter', () => {
   const tracks = [
-    { id: 'preview', capabilities: { playback: 'preview' } },
-    { id: 'full', capabilities: { playback: 'full' } },
+    { id: 'preview', audioUrl: 'https://audio.example/preview.m4a', capabilities: { playback: 'preview' } },
+    { id: 'full', audioUrl: 'https://audio.example/full.mp3', capabilities: { playback: 'full' } },
+    { id: 'candidate', audioUrl: '', capabilities: { playback: 'full' } },
     { id: 'metadata', capabilities: { playback: 'none' } },
   ]
 
-  assert.deepEqual(filterTracksByPlayback(tracks, 'no-preview').map(({ id }) => id), ['full', 'metadata'])
+  assert.deepEqual(filterTracksByPlayback(tracks, 'no-preview').map(({ id }) => id), ['full', 'candidate', 'metadata'])
   assert.deepEqual(filterTracksByPlayback(tracks, 'full').map(({ id }) => id), ['full'])
   assert.equal(filterTracksByPlayback(tracks, 'all'), tracks)
   assert.deepEqual(filterTracksByPlayback(null, 'all'), [])
+})
+
+test('reports direct full, preview, unresolved, and metadata results separately', () => {
+  assert.deepEqual(summarizePlaybackTracks([
+    { audioUrl: 'https://audio.example/full.mp3', capabilities: { playback: 'full' } },
+    { audioUrl: '', capabilities: { playback: 'full' } },
+    { audioUrl: 'https://audio.example/preview.m4a', capabilities: { playback: 'preview' } },
+    { audioUrl: '', capabilities: { playback: 'preview' } },
+    { capabilities: { playback: 'none' } },
+  ]), { full: 1, preview: 1, candidate: 1, metadata: 2 })
+  assert.deepEqual(summarizePlaybackTracks(null), { full: 0, preview: 0, candidate: 0, metadata: 0 })
 })
 
 test('prioritizes direct full and preview playback before unresolved full candidates and metadata', () => {
@@ -76,6 +88,23 @@ test('keeps the first half strictly playable-first and diversifies the remaining
     'apple-0', 'apple-1', 'apple-2', 'audius-1', 'netease-1', 'musicbrainz-1',
   ])
   assert.deepEqual(diversifyRankedTracks(tracks, 0), [])
+})
+
+test('appends unique search pages without replacing earlier playback state', () => {
+  const current = [
+    { source: 'audius', id: '1', capabilities: { playback: 'none' } },
+    { source: 'apple', id: '2', capabilities: { playback: 'preview' } },
+  ]
+  const next = [
+    { source: 'audius', id: '1', capabilities: { playback: 'full' } },
+    { source: 'musicbrainz', id: '3', capabilities: { playback: 'none' } },
+    { source: 'apple', id: '4', capabilities: { playback: 'preview' } },
+  ]
+
+  assert.deepEqual(mergeSearchPages(current, next, 3), [current[0], current[1], next[1]])
+  assert.deepEqual(mergeSearchPages([], next, 2), next.slice(0, 2))
+  assert.deepEqual(mergeSearchPages(current, null, 10), current)
+  assert.deepEqual(mergeSearchPages(current, next, 0), [])
 })
 
 test('filters search results by metadata field and duration without mutating relevance order', () => {

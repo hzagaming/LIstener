@@ -10,6 +10,10 @@ export declare const filterTracksByPlayback: <T extends { capabilities: { playba
   tracks: T[] | null | undefined,
   mode: 'no-preview' | 'full' | 'all',
 ) => T[]
+export declare const summarizePlaybackTracks: (tracks: Array<{
+  audioUrl?: unknown
+  capabilities?: { playback?: unknown }
+}> | null | undefined) => { full: number; preview: number; candidate: number; metadata: number }
 export declare const playbackRank: (track: {
   audioUrl?: unknown
   capabilities?: { playback?: unknown }
@@ -22,6 +26,11 @@ export declare const diversifyRankedTracks: <T extends {
   audioUrl?: unknown
   capabilities: { playback: string }
 }>(tracks: T[] | null | undefined, limit: number) => T[]
+export declare const mergeSearchPages: <T extends { source?: unknown; id?: unknown }>(
+  current: T[] | null | undefined,
+  incoming: T[] | null | undefined,
+  limit: number,
+) => T[]
 export type SearchDomain = 'all' | 'title' | 'artist' | 'album'
 export type SearchDuration = 'all' | 'short' | 'medium' | 'long'
 export type SearchSort = 'relevance' | 'title' | 'artist' | 'duration'

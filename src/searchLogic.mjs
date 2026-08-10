@@ -20,9 +20,17 @@ export const filterTracksByPlayback = (tracks, mode) => {
   if (!Array.isArray(tracks)) return []
   if (mode === 'all') return tracks
   return tracks.filter((track) => mode === 'full'
-    ? track?.capabilities?.playback === 'full'
+    ? track?.capabilities?.playback === 'full' && Boolean(track?.audioUrl)
     : track?.capabilities?.playback !== 'preview')
 }
+
+export const summarizePlaybackTracks = (tracks) => (Array.isArray(tracks) ? tracks : []).reduce((counts, track) => {
+  const playback = track?.capabilities?.playback
+  if (playback === 'full') counts[track?.audioUrl ? 'full' : 'candidate'] += 1
+  else if (playback === 'preview' && track?.audioUrl) counts.preview += 1
+  else counts.metadata += 1
+  return counts
+}, { full: 0, preview: 0, candidate: 0, metadata: 0 })
 
 export const playbackRank = (track) => {
   const playback = track?.capabilities?.playback
@@ -68,6 +76,20 @@ export const diversifyRankedTracks = (tracks, limit) => {
     if (!progressed) break
   }
   return selected
+}
+
+export const mergeSearchPages = (current, incoming, limit) => {
+  if (!Array.isArray(current) || !Number.isInteger(limit) || limit < 1) return []
+  const merged = []
+  const seen = new Set()
+  for (const track of [...current, ...(Array.isArray(incoming) ? incoming : [])]) {
+    const identity = `${String(track?.source ?? '')}:${String(track?.id ?? '')}`
+    if (seen.has(identity)) continue
+    seen.add(identity)
+    merged.push(track)
+    if (merged.length === limit) break
+  }
+  return merged
 }
 
 const searchableText = (value) => String(value ?? '').normalize('NFKC').toLocaleLowerCase()

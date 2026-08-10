@@ -6,6 +6,14 @@ export const playbackUnavailableTrack = (track) => ({
   capabilities: { ...track.capabilities, playback: 'none' },
 })
 
+export const nextDirectFullTrack = (tracks, currentKey) => {
+  const index = tracks.findIndex((track) => `${track.source}:${track.id}` === currentKey)
+  if (index < 0) return null
+  return tracks.slice(index + 1).find((track) => (
+    track.capabilities.playback === 'full' && Boolean(track.audioUrl)
+  )) ?? null
+}
+
 const shuffleTracks = (tracks, random) => {
   const shuffled = [...tracks]
   for (let index = shuffled.length - 1; index > 0; index -= 1) {

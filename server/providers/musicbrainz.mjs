@@ -69,7 +69,7 @@ export const createMusicBrainzProvider = ({
     timeoutMs,
     maxResponseBytes: responseLimitBytes,
     maxRetries,
-    userAgent: `Listener/0.10.1 (${normalizedContact})`,
+    userAgent: `Listener/0.10.2 (${normalizedContact})`,
   })
 
   const request = (url, signal, notFound = false) => {

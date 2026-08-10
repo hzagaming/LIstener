@@ -38,7 +38,7 @@ test('searches Audius with a server-side API key and normalizes public tracks', 
     album: 'Originals',
     duration: 194,
     source: 'audius',
-    audioUrl: '',
+    audioUrl: 'https://api.audius.co/v1/tracks/D7KyD/stream?skip_play_count=true',
     cover: 'https://img.audius.example/480.jpg',
     sourceUrl: 'https://audius.co/camouflybeats/hypermantra-86216',
     quality: 'unknown',
@@ -92,6 +92,7 @@ test('keeps gated or malformed-permission tracks visible but disables playback',
   const results = await provider.search('gated')
   assert.equal(results.length, 9)
   assert.equal(results.every((result) => result.capabilities.playback === 'none'), true)
+  assert.equal(results.every((result) => result.audioUrl === ''), true)
   assert.equal(results.every((result) => result.quality === 'unknown'), true)
 })
 

@@ -109,7 +109,7 @@ test('aggregates four keyless browser sources without letting one outage hide th
 
   const page = await provider.searchPage('Dua Lipa', { pageSize: 8 })
 
-  assert.deepEqual(page.tracks.map(({ source }) => source), ['apple', 'audius', 'musicbrainz'])
+  assert.deepEqual(page.tracks.map(({ source }) => source), ['audius', 'apple', 'musicbrainz'])
   assert.equal(page.hasMore, false)
   assert.equal(requests.some(({ url }) => url.searchParams.has('api_key')), false)
   assert.equal(requests.some(({ url }) => url.origin === 'https://commons.wikimedia.org'), true)
@@ -125,14 +125,13 @@ test('searches Audius directly with honest pagination, playback, and download ca
 
   assert.equal(requests[0].url.href, 'https://api.audius.co/v1/tracks/search?query=Hyper&limit=5&offset=5')
   assert.equal(requests[0].options.headers.Accept, 'application/json')
-  assert.equal(result.audioUrl, '')
+  assert.equal(result.audioUrl, 'https://api.audius.co/v1/tracks/D7KyD/stream?skip_play_count=true')
   assert.equal(result.cover, audiusFixture.artwork['480x480'])
   assert.deepEqual(result.capabilities, { playback: 'full', lyrics: false, download: true })
 })
 
-test('resolves only byte-verified Audius streams and returns explicitly authorized downloads', async () => {
+test('resolves official Audius streams without requiring browser CORS and returns explicitly authorized downloads', async () => {
   const requests = []
-  let streamAttempts = 0
   const provider = createPublicMusicProvider({
     apple,
     fallback,
@@ -140,26 +139,15 @@ test('resolves only byte-verified Audius streams and returns explicitly authoriz
     fetchImpl: async (input, options = {}) => {
       const url = new URL(input)
       requests.push({ url, options })
-      if (url.pathname.endsWith('/stream')) {
-        streamAttempts += 1
-        return streamAttempts === 1
-          ? new Response('blocked', { status: 403, headers: { 'content-type': 'text/plain' } })
-          : {
-            ok: true,
-            status: 206,
-            url: 'https://media.audius.example/Hypermantra.mp3?signature=safe',
-            headers: new Headers({ 'content-type': 'audio/mpeg' }),
-            body: { cancel: async () => undefined },
-          }
-      }
+      if (url.pathname.endsWith('/stream')) throw new Error('stream probing must be left to the media element')
       return Response.json({ data: audiusFixture })
     },
   })
   const stale = { ...track('audius', 'D7KyD', 'full'), capabilities: { playback: 'full', lyrics: false, download: true } }
 
-  assert.equal(await provider.resolve(stale), 'https://media.audius.example/Hypermantra.mp3?signature=safe')
+  assert.equal(await provider.resolve(stale), 'https://api.audius.co/v1/tracks/D7KyD/stream?skip_play_count=true&_t=123456')
   assert.deepEqual(await provider.download(stale), { url: audiusFixture.download.url, filename: 'Hypermantra.wav' })
-  assert.equal(requests.filter(({ url }) => url.pathname.endsWith('/stream')).length, 2)
+  assert.equal(requests.some(({ url }) => url.pathname.endsWith('/stream')), false)
   assert.equal(requests.some(({ url }) => url.searchParams.has('api_key')), false)
 
   const gated = createPublicMusicProvider({

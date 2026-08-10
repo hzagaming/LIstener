@@ -3,7 +3,6 @@ import { abortableDelay, createRequestSignal } from '../requestPolicy.mjs'
 import { createSearchFallbackError, parseSearchPage } from '../searchLogic.mjs'
 import { isMusicIdentification, isMusicSource, isTrack } from '../types/music'
 import { isSafeUrl } from '../urlPolicy.mjs'
-import { verifyPublicAudioUrl } from '../mediaProbe.mjs'
 import { createPublicAppleProvider } from './publicAppleProvider.mjs'
 import { createPublicMusicProvider } from './publicMusicProvider.mjs'
 import { artworkFilename, builtInArtwork, readArtworkResponse } from '../downloadLogic.mjs'
@@ -157,9 +156,7 @@ class ApiProvider implements MusicProvider {
       const payload = await response.json() as { url?: string }
       const resolvedUrl = mediaUrl(payload.url)
       if (!resolvedUrl) throw new Error('invalid resolve response')
-      return track.source === 'audius'
-        ? verifyPublicAudioUrl(resolvedUrl, { signal })
-        : resolvedUrl
+      return resolvedUrl
     } catch (error) {
       if (signal?.aborted) throw error
       if (track.source === 'apple') return this.fallback.resolve(track, signal)

@@ -18,13 +18,15 @@ test('release metadata stays synchronized across the app shell', async () => {
   const lock = JSON.parse(await readFile(new URL('../package-lock.json', import.meta.url), 'utf8'))
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8')
   const worker = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')
+  const changelog = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8')
 
-  assert.equal(manifest.version, '0.10.1')
+  assert.equal(manifest.version, '0.10.2')
   assert.equal(lock.version, manifest.version)
   assert.equal(lock.packages[''].version, manifest.version)
-  assert.match(app, /Listener 0\.10\.1/)
-  assert.match(readme, /当前版本：`0\.10\.1`/)
-  assert.match(worker, /listener-shell-v0\.10\.1/)
+  assert.match(app, /Listener 0\.10\.2/)
+  assert.match(readme, /当前版本：`0\.10\.2`/)
+  assert.match(worker, /listener-shell-v0\.10\.2/)
+  assert.match(changelog, /## 当前公告\s+### 0\.10\.2[\s\S]*?## 历史公告\s+### 0\.10\.1/)
 })
 
 test('the production build targets the GitHub Pages project path', async () => {
@@ -128,9 +130,10 @@ test('the UI exposes one music output and defaults to playable-first results', a
   assert.match(app, /无试听（含元数据）/)
   assert.match(app, /仅完整可播/)
   assert.match(app, /diversifyRankedTracks\(refined, refined\.length\)/)
-  assert.match(app, /searchPage\(query, \{ provider: searchSource, pageSize: 50 \}/)
+  assert.match(app, /searchPage\(query, \{ provider: searchSource, page: 1, pageSize: searchPageSize \}/)
   assert.match(app, /完整音源 · 点击验证/)
-  assert.match(app, /直接可播 \$\{resultPlaybackCounts\.direct\} 首/)
+  assert.match(app, /完整直连 \$\{resultPlaybackCounts\.full\} 首/)
+  assert.match(app, /待解析 \$\{resultPlaybackCounts\.candidate\} 首/)
 })
 
 test('metadata-only search results open their verified source instead of becoming dead controls', async () => {
@@ -142,14 +145,17 @@ test('metadata-only search results open their verified source instead of becomin
   assert.match(app, /站内不可播 · 点击左侧前往来源/)
 })
 
-test('failed playback verification becomes a source link instead of an endless reconnect loop', async () => {
+test('Audius playback avoids CORS-only probes and still recovers from real media failures', async () => {
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
   const provider = await readFile(new URL('./services/musicProvider.ts', import.meta.url), 'utf8')
+  const publicProvider = await readFile(new URL('./services/publicMusicProvider.mjs', import.meta.url), 'utf8')
   const resolveAndPlay = app.slice(app.indexOf('const resolveAndPlay'), app.indexOf('const startCurrent'))
 
-  assert.match(provider, /track\.source === 'audius'[\s\S]*?verifyPublicAudioUrl\(resolvedUrl/)
+  assert.doesNotMatch(provider, /verifyPublicAudioUrl/)
+  assert.doesNotMatch(publicProvider, /verifyPublicAudioUrl/)
+  assert.match(publicProvider, /const audiusStreamUrl[\s\S]*?new URL\(`tracks\/\$\{id\}\/stream`, AUDIUS_API\)/)
   assert.match(resolveAndPlay, /restricted[\s\S]*?markPlaybackUnavailable\(target\)/)
-  assert.match(app, /音源验证失败，已改为来源跳转/)
+  assert.match(app, /音源已失效，点击播放可重新连接/)
 })
 
 test('overlay scrims expose distinct accessible close actions', async () => {
@@ -248,6 +254,28 @@ test('secondary exploration stays collapsed so mobile search results remain near
   assert.match(styles, /@media \(max-width: 820px\)[\s\S]*?\.search-hero\s*\{[^}]*padding:\s*24px 0 12px/)
 })
 
+test('main search can extend across bounded pages without discarding earlier results', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+
+  assert.match(app, /const searchMaxPages = 10/)
+  assert.match(app, /musicProvider\.searchPage\(query, \{ provider: searchSource, page: nextPage, pageSize: searchPageSize \}/)
+  assert.match(app, /mergeSearchPages\(previous, found\.tracks, searchResultLimit\)/)
+  assert.match(app, /继续搜索更多/)
+  assert.match(app, /继续寻找完整歌曲/)
+  assert.match(app, /已达到本次搜索上限/)
+  assert.match(app, /重试寻找完整歌曲/)
+  assert.match(app, /searchMoreControllerRef\.current\?\.abort\(\)/)
+  assert.match(styles, /@media \(max-width: 820px\)[\s\S]*?\.search-pagination \.secondary-button\s*\{[^}]*min-height:\s*44px/)
+})
+
+test('a new search clears a stale result-source filter', async () => {
+  const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
+  const searchEffect = app.slice(app.indexOf('const inputMode'), app.indexOf('const loadMoreSearchResults'))
+
+  assert.match(searchEffect, /setSourceFilter\('all'\)/)
+})
+
 test('ID resolution aborts an active keyword search', async () => {
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
   const searchEffect = app.slice(app.indexOf('const inputMode'), app.indexOf('const currentKey'))
@@ -274,7 +302,7 @@ test('search can target every currently connected provider before results load',
 
   assert.match(app, /const \[searchSource, setSearchSource\] = useState<'all' \| MusicSource>\('all'\)/)
   assert.match(app, /providerStatus\.sources\.filter\(\(source\) => providerStatus\.capabilities\[source\]\?\.search/)
-  assert.match(app, /musicProvider\.searchPage\(query, \{ provider: searchSource, pageSize: 50 \}, controller\.signal\)/)
+  assert.match(app, /musicProvider\.searchPage\(query, \{ provider: searchSource, page: 1, pageSize: searchPageSize \}, controller\.signal\)/)
   assert.match(app, /<select aria-label="搜索音乐源" value=\{searchSource\}/)
   assert.match(app, /searchableSources\.map\(\(source\) => <option key=\{source\} value=\{source\}>\{sourceLabel\(source\)\}<\/option>\)/)
 })
@@ -322,9 +350,14 @@ test('media errors own playback failure feedback without a competing promise not
 test('a stalled audio source cannot leave the player buffering forever', async () => {
   const app = await readFile(new URL('./App.tsx', import.meta.url), 'utf8')
   const buffering = app.slice(app.indexOf('const clearBufferingTimeout'), app.indexOf('const cancelMediaRetry'))
+  const mediaFailure = app.slice(app.indexOf('const handleAudioError'), app.indexOf('const seekTo'))
 
   assert.match(app, /const bufferingTimerRef = useRef<number>\(\)/)
-  assert.match(buffering, /window\.setTimeout\([\s\S]*?audio\.pause\(\)[\s\S]*?setIsBuffering\(false\)[\s\S]*?音源连接超时，请重试或换一首[\s\S]*?15_000/)
+  assert.match(buffering, /window\.setTimeout\([\s\S]*?handleAudioError\(audio\)[\s\S]*?5_000/)
+  assert.match(app, /nextDirectFullTrack\(queue, currentKey\)[\s\S]*?当前音源失效，正在切换下一首完整歌曲/)
+  assert.match(mediaFailure, /setHomeTracks\(\(previous\) => previous\.map\(update\)\)/)
+  assert.match(mediaFailure, /setPlaylistRecommendations\([\s\S]*?track: update\(recommendation\.track\)/)
+  assert.match(mediaFailure, /setHistory\([\s\S]*?track: update\(item\.track\)/)
   assert.match(app, /onPlaying=\{\(event\) => \{ if \(isCurrentAudio\(event\.currentTarget\)\) \{ clearBufferingTimeout\(\)/)
   assert.match(app, /onPause=\{\(event\) => \{ if \(isCurrentAudio\(event\.currentTarget\)\) \{ clearBufferingTimeout\(\)/)
 })

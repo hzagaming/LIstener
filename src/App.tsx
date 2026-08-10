@@ -9,13 +9,13 @@ import { playlists, tracks as initialTracks } from './data/catalog'
 import { localFileStem, readLocalLyrics, selectLocalAudioFiles } from './localFiles.mjs'
 import {
   autoplayMediaMatches, collectionPlaybackPlan, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
-  mediaErrorAction, playbackUnavailableTrack, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
+  mediaErrorAction, nextDirectFullTrack, playbackUnavailableTrack, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 import {
   mergeRecommendationPages, nextPlayableRecommendation, recommendationSeed, shouldPrefetchRecommendations,
 } from './recommendationLogic.mjs'
-import { diversifyRankedTracks, filterTracksByPlayback, refineSearchTracks, searchFallbackTracks, searchInputMode } from './searchLogic.mjs'
+import { diversifyRankedTracks, filterTracksByPlayback, mergeSearchPages, refineSearchTracks, searchFallbackTracks, searchInputMode, summarizePlaybackTracks } from './searchLogic.mjs'
 import { downloadArtwork, musicProvider, publicBrowserMode, sourceLabel } from './services/musicProvider'
 import { accountApi, accountAvailable } from './services/account'
 import { mergeLibraryData, normalizeLibraryData } from './syncLogic.mjs'
@@ -39,6 +39,9 @@ type CornerStyle = 'square' | 'soft' | 'round'
 type PlayerLayout = 'docked' | 'floating'
 type BackgroundTexture = 'none' | 'paper' | 'grid'
 type PlaylistRecommendation = { track: Track; reason: string }
+const searchPageSize = 50
+const searchMaxPages = 10
+const searchResultLimit = searchPageSize * searchMaxPages
 const identifiableSources: MusicSource[] = musicSources.filter((source) => !['demo', 'local', 'fixture'].includes(source))
 const publicBrowserSources = new Set<MusicSource>(['apple', 'audius', 'musicbrainz', 'wikimedia'])
 const sourceParsingNotes: Partial<Record<MusicSource, string>> = {
@@ -50,6 +53,7 @@ const projectLinks = [
   { label: 'GitHub 仓库', href: 'https://github.com/hzagaming/LIstener' },
   { label: 'Issue 仓库', href: 'https://github.com/hzagaming/LIstener/issues' },
   { label: 'Commit 记录', href: 'https://github.com/hzagaming/LIstener/commits/main' },
+  { label: 'v0.10.2 发布说明', href: 'https://github.com/hzagaming/LIstener/releases/tag/v0.10.2' },
   { label: 'GitHub Releases', href: 'https://github.com/hzagaming/LIstener/releases' },
   { label: 'HZAGAMING 主页', href: 'https://github.com/hzagaming' },
 ] as const
@@ -268,6 +272,10 @@ function App() {
   const [isSearching, setIsSearching] = useState(false)
   const [searchDegraded, setSearchDegraded] = useState(false)
   const [searchRevision, setSearchRevision] = useState(0)
+  const [searchPage, setSearchPage] = useState(1)
+  const [searchHasMore, setSearchHasMore] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [searchMoreError, setSearchMoreError] = useState(false)
   const [sourceFilter, setSourceFilter] = useState<'all' | MusicSource>('all')
   const [searchSource, setSearchSource] = useState<'all' | MusicSource>('all')
   const [playbackFilter, setPlaybackFilter] = useState<PlaybackFilter>('all')
@@ -349,6 +357,7 @@ function App() {
   const audioRef = useRef<HTMLAudioElement>(null)
   const resolveControllerRef = useRef<AbortController | null>(null)
   const searchControllerRef = useRef<AbortController | null>(null)
+  const searchMoreControllerRef = useRef<AbortController | null>(null)
   const recommendationControllerRef = useRef<AbortController | null>(null)
   const homeControllerRef = useRef<AbortController | null>(null)
   const recommendationLoadingRef = useRef(false)
@@ -404,11 +413,8 @@ function App() {
     bufferingTimerRef.current = window.setTimeout(() => {
       bufferingTimerRef.current = undefined
       if (audioRef.current !== audio || audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA || audio.paused) return
-      audio.pause()
-      setIsPlaying(false)
-      setIsBuffering(false)
-      showNotice('音源连接超时，请重试或换一首')
-    }, 15_000)
+      handleAudioError(audio)
+    }, 5_000)
   }
 
   const attemptPlayback = (audio: HTMLAudioElement) => {
@@ -593,6 +599,7 @@ function App() {
     playRequestRef.current += 1
     resolveControllerRef.current?.abort()
     searchControllerRef.current?.abort()
+    searchMoreControllerRef.current?.abort()
     homeControllerRef.current?.abort()
     recommendationControllerRef.current?.abort()
     identifyControllerRef.current?.abort()
@@ -694,7 +701,14 @@ function App() {
     let active = true
     const requestId = ++searchRequestRef.current
     const trimmed = query.trim()
+    searchMoreControllerRef.current?.abort()
+    searchMoreControllerRef.current = null
     setSearchDegraded(false)
+    setSearchPage(1)
+    setSearchHasMore(false)
+    setIsLoadingMore(false)
+    setSearchMoreError(false)
+    setSourceFilter('all')
     if (inputMode === 'empty') {
       setResults(initialTracks)
       setResultQuery('')
@@ -714,8 +728,12 @@ function App() {
     setIsSearching(true)
     const timeout = window.setTimeout(async () => {
       try {
-        const found = await musicProvider.searchPage(query, { provider: searchSource, pageSize: 50 }, controller.signal)
-        if (active && requestId === searchRequestRef.current) setResults(found.tracks)
+        const found = await musicProvider.searchPage(query, { provider: searchSource, page: 1, pageSize: searchPageSize }, controller.signal)
+        if (active && requestId === searchRequestRef.current) {
+          setResults(found.tracks)
+          setSearchPage(found.page)
+          setSearchHasMore(found.hasMore && found.page < searchMaxPages)
+        }
       } catch (error) {
         const fallback = searchFallbackTracks<Track>(error)
         if (active && requestId === searchRequestRef.current) {
@@ -735,6 +753,29 @@ function App() {
     }
   }, [query, searchRevision, searchSource])
 
+  const loadMoreSearchResults = async () => {
+    if (inputMode !== 'search' || isSearching || isLoadingMore || !searchHasMore || searchPage >= searchMaxPages) return
+    searchMoreControllerRef.current?.abort()
+    const controller = new AbortController()
+    searchMoreControllerRef.current = controller
+    const requestId = searchRequestRef.current
+    const nextPage = searchPage + 1
+    setIsLoadingMore(true)
+    setSearchMoreError(false)
+    try {
+      const found = await musicProvider.searchPage(query, { provider: searchSource, page: nextPage, pageSize: searchPageSize }, controller.signal)
+      if (controller.signal.aborted || requestId !== searchRequestRef.current || found.page !== nextPage) return
+      setResults((previous) => mergeSearchPages(previous, found.tracks, searchResultLimit))
+      setSearchPage(found.page)
+      setSearchHasMore(found.hasMore && found.page < searchMaxPages)
+    } catch {
+      if (!controller.signal.aborted && requestId === searchRequestRef.current) setSearchMoreError(true)
+    } finally {
+      if (searchMoreControllerRef.current === controller) searchMoreControllerRef.current = null
+      if (requestId === searchRequestRef.current) setIsLoadingMore(false)
+    }
+  }
+
   const currentKey = trackKey(current)
   const currentIndex = useMemo(() => queue.findIndex((track) => trackKey(track) === currentKey), [queue, currentKey])
   const sourceResults = useMemo(
@@ -752,12 +793,27 @@ function App() {
     [refinedResults, playbackFilter],
   )
   const hiddenByFilters = sourceResults.length - displayResults.length
-  const resultPlaybackCounts = useMemo(() => displayResults.reduce((counts, track) => {
-    if (track.capabilities.playback === 'full') counts.full += 1
-    else if (track.capabilities.playback === 'preview') counts.preview += 1
-    if (track.capabilities.playback !== 'none' && track.audioUrl) counts.direct += 1
-    return counts
-  }, { direct: 0, full: 0, preview: 0 }), [displayResults])
+  const resultPlaybackCounts = useMemo(() => summarizePlaybackTracks(displayResults), [displayResults])
+  const resultPlaybackSummary = [
+    `完整直连 ${resultPlaybackCounts.full} 首`,
+    playbackFilter === 'all' ? `试听 ${resultPlaybackCounts.preview} 首` : '',
+    playbackFilter !== 'full' ? `待解析 ${resultPlaybackCounts.candidate} 首` : '',
+    playbackFilter !== 'full' ? `元数据 ${resultPlaybackCounts.metadata} 首` : '',
+  ].filter(Boolean).join(' · ')
+  const searchPaginationStatus = isLoadingMore
+    ? playbackFilter === 'full' ? `正在继续寻找完整歌曲（第 ${searchPage + 1} 页）…` : `正在搜索第 ${searchPage + 1} 页…`
+    : searchMoreError
+      ? `第 ${searchPage + 1} 页加载失败，已保留当前 ${displayResults.length} 首结果`
+      : searchPage >= searchMaxPages
+        ? playbackFilter === 'full'
+          ? `共找到 ${displayResults.length} 首完整可播，已达到本次搜索上限`
+          : `已加载 ${results.length} 首，已达到本次搜索上限`
+        : playbackFilter === 'full'
+          ? searchHasMore ? `当前已找到 ${displayResults.length} 首完整可播，可继续搜索后续页面` : `共找到 ${displayResults.length} 首完整可播，当前来源已到末页`
+          : searchHasMore ? `已加载 ${results.length} 首，可继续拓展至最多 ${searchResultLimit} 首` : `已加载 ${results.length} 首，当前来源已到末页`
+  const searchMoreLabel = searchMoreError
+    ? playbackFilter === 'full' ? '重试寻找完整歌曲' : '重试加载更多'
+    : playbackFilter === 'full' ? '继续寻找完整歌曲' : '继续搜索更多'
   const resultSources = useMemo(() => [...new Set(results.map((track) => track.source))], [results])
   const publicSearchFallback = searchDegraded && resultSources.some((source) => publicBrowserSources.has(source))
   const demoSearchFallback = searchDegraded && resultSources.some((source) => ['demo', 'fixture'].includes(source))
@@ -1629,6 +1685,8 @@ function App() {
     if (!input) return showNotice('请输入音乐地址或 ID')
     searchControllerRef.current?.abort()
     searchControllerRef.current = null
+    searchMoreControllerRef.current?.abort()
+    searchMoreControllerRef.current = null
     identifyControllerRef.current?.abort()
     const controller = new AbortController()
     identifyControllerRef.current = controller
@@ -1652,6 +1710,9 @@ function App() {
         const track = await musicProvider.lookup(match, controller.signal)
         if (requestId !== identifyRequestRef.current) return
         setResults([track])
+        setSearchPage(1)
+        setSearchHasMore(false)
+        setSearchMoreError(false)
         setResultQuery(input)
         setSourceFilter('all')
         setIdentificationHasDetails(true)
@@ -1733,6 +1794,7 @@ function App() {
       showNotice('音源暂时无法播放，请换一首试试')
       return
     }
+    const replacement = nextDirectFullTrack(queue, currentKey)
     const invalidated = { ...current, audioUrl: '' }
     const update = (track: Track) => trackKey(track) === currentKey ? invalidated : track
     queueRevisionRef.current += 1
@@ -1741,9 +1803,20 @@ function App() {
     setDuration(initialPlaybackDuration(invalidated))
     setQueue((previous) => previous.map(update))
     setResults((previous) => previous.map(update))
+    setHomeTracks((previous) => previous.map(update))
     setLiked((previous) => previous.has(currentKey) ? new Map(previous).set(currentKey, invalidated) : previous)
     setUserPlaylists((previous) => previous.map((playlist) => ({ ...playlist, tracks: playlist.tracks.map(update) })))
-    showNotice('音源已失效，点击播放可重新连接')
+    setPlaylistRecommendations((previous) => previous.map((recommendation) => ({
+      ...recommendation,
+      track: update(recommendation.track),
+    })))
+    setHistory((previous) => previous.map((item) => ({ ...item, track: update(item.track) })))
+    if (!replacement) {
+      showNotice('音源已失效，点击播放可重新连接')
+      return
+    }
+    showNotice('当前音源失效，正在切换下一首完整歌曲')
+    window.setTimeout(() => void resolveAndPlay(replacement, undefined, 'play', continuousPlaylistIdRef.current), 0)
   }
 
   const seekTo = (value: number) => {
@@ -2029,7 +2102,7 @@ function App() {
             </div>
             <section className="results-section">
               {searchDegraded && <div className="search-warning" role="alert"><Sparkles /><span><strong>{publicSearchFallback ? '聚合服务离线，已切换公共搜索' : demoSearchFallback ? '聚合服务异常，当前为演示结果' : '所选音乐源暂不可用'}</strong><small>{publicSearchFallback ? '当前由 Apple Music、Audius、MusicBrainz 与 Wikimedia Commons 提供可用结果。' : demoSearchFallback ? '真实音乐源暂时不可用，以下为演示数据。' : '没有返回回退数据，请检查服务配置后重试。'}</small></span><button onClick={() => setSearchRevision((value) => value + 1)}>重试</button></div>}
-              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索 · 直接可播 ${resultPlaybackCounts.direct} 首 · 共 ${displayResults.length} 首` : demoSearchFallback ? `演示结果 ${displayResults.length} 首` : searchDegraded ? '搜索失败' : `直接可播 ${resultPlaybackCounts.direct} 首 · 完整候选 ${resultPlaybackCounts.full} 首 · 共 ${displayResults.length} 首${hiddenByFilters ? ` · 已过滤 ${hiddenByFilters} 首` : ''}`}</span></div>
+              <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索 · ${resultPlaybackSummary} · 共 ${displayResults.length} 首` : demoSearchFallback ? `演示结果 ${displayResults.length} 首` : searchDegraded ? '搜索失败' : `${resultPlaybackSummary} · 共 ${displayResults.length} 首${hiddenByFilters ? ` · 已过滤 ${hiddenByFilters} 首` : ''}`}</span></div>
               <div className="track-list" role="list">
                 {displayResults.length ? displayResults.map((track, index) => (
                   <TrackRow
@@ -2050,6 +2123,13 @@ function App() {
                   />
                 )) : <div className="empty-state"><Disc3 /><h3>{isSearching ? '正在寻找好音乐' : inputMode === 'too-long' ? '搜索词太长' : sourceResults.length ? '当前筛选没有结果' : searchDegraded ? '聚合服务暂不可用' : identification ? '地址已识别' : '还没找到这首歌'}</h3><p>{isSearching ? '正在连接可用音乐源，请稍候。' : inputMode === 'too-long' ? '请缩短到 100 个字符以内，再重新搜索。' : sourceResults.length ? '可调整搜索字段、时长或播放范围，查看其他曲目。' : searchDegraded ? '备用音乐源也没有匹配结果，请点击重试。' : identification ? '当前来源尚未提供授权详情接口，可先在来源页面打开。' : '换个关键词，或使用上方地址 / ID 解析。'}</p></div>}
               </div>
+              {(searchHasMore || searchPage > 1 || searchMoreError) && (
+                <div className="search-pagination">
+                  <span aria-live="polite">{searchPaginationStatus}</span>
+                  {searchMoreError && <small role="alert">更多结果加载失败，请重试。</small>}
+                  {searchHasMore && <button className="secondary-button" aria-busy={isLoadingMore} disabled={isLoadingMore} onClick={() => void loadMoreSearchResults()}>{isLoadingMore ? <LoaderCircle className="spin" /> : <Plus />}{searchMoreLabel}</button>}
+                </div>
+              )}
             </section>
           </div>
         )}
@@ -2190,7 +2270,7 @@ function App() {
 
               <section className="account-panel settings-panel settings-panel--project">
                 <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
-                <p>Listener 0.10.1 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <p>Listener 0.10.2 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
                 <div className="project-links">
                   {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
                 </div>

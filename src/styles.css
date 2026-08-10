@@ -263,6 +263,9 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .playback-filters button:hover { color: var(--ink); }
 .playback-filters button.active { border-bottom-color: var(--orange); color: var(--ink); font-weight: 700; }
 .results-section { padding-top: 10px; }
+.search-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 22px 0 4px; color: var(--muted); }
+.search-pagination span { font-size: 11px; }
+.search-pagination small { color: #9a4d36; font-size: 10px; }
 .searching-state { font-size: 12px; color: #66635d; }
 .search-warning { display: flex; align-items: center; gap: 11px; margin-bottom: 20px; border: 1px solid #c99a61; background: #f1e4d0; color: #664825; padding: 12px 14px; }
 .search-warning > svg { flex: 0 0 auto; width: 18px; }
@@ -384,7 +387,7 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .parseable-sources { display: flex; flex-direction: column; gap: 6px; padding-top: 3px; }
 .parseable-sources strong { font-size: 10px; }
 .parseable-sources span { color: var(--muted); font-size: 10px; line-height: 1.7; }
-.project-links { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); }
+.project-links { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border: 1px solid var(--line); }
 .project-links a { min-width: 0; min-height: 50px; padding: 10px 12px; border-right: 1px solid var(--line); color: var(--ink); display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; text-decoration: none; }
 .project-links a:last-child { border-right: 0; }
 .project-links a:hover { background: var(--paper-deep); }
@@ -567,6 +570,8 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .section-heading { align-items: flex-start; gap: 12px; }
   .results-section .section-heading { flex-direction: column; }
   .results-section .section-heading > div { width: 100%; }
+  .search-pagination { align-items: stretch; flex-direction: column; }
+  .search-pagination .secondary-button { align-self: flex-start; min-height: 44px; }
   .section-actions { flex-wrap: wrap; justify-content: flex-end; }
   .collection-actions { justify-content: flex-start; }
   .recommendation-actions { align-items: flex-end; flex-direction: column; }

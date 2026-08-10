@@ -1,5 +1,4 @@
 import { identifyMusicInput } from '../../server/platforms.mjs'
-import { verifyPublicAudioUrl } from '../mediaProbe.mjs'
 import { abortableDelay, createRequestSignal } from '../requestPolicy.mjs'
 import { createSearchFallbackError, diversifyRankedTracks, playbackRank, searchFallbackTracks } from '../searchLogic.mjs'
 
@@ -94,6 +93,13 @@ const publicAudiusDownload = (track) => track?.access?.download === true
   && track.is_download_gated === false
   && track.download_conditions == null
 
+const audiusStreamUrl = (id, timestamp) => {
+  const url = new URL(`tracks/${id}/stream`, AUDIUS_API)
+  url.searchParams.set('skip_play_count', 'true')
+  if (timestamp !== undefined) url.searchParams.set('_t', String(timestamp))
+  return url.toString()
+}
+
 const normalizeAudius = (track) => {
   const id = typeof track?.id === 'string' ? track.id : ''
   const title = typeof track?.title === 'string' ? track.title.trim() : ''
@@ -108,7 +114,7 @@ const normalizeAudius = (track) => {
     album: String(track.album_backlink?.playlist_name || 'Audius'),
     duration: Number.isFinite(duration) ? Math.max(0, Math.round(duration)) : 0,
     source: 'audius',
-    audioUrl: '',
+    audioUrl: playable ? audiusStreamUrl(id) : '',
     cover: safeHttpsUrl(track.artwork?.['480x480']) || safeHttpsUrl(track.artwork?.['150x150']) || 'night',
     sourceUrl: sourceUrl(track),
     quality: playable ? 'high' : 'unknown',
@@ -381,10 +387,7 @@ export const createPublicMusicProvider = ({
         if (!publicAudiusStream(data)) {
           throw Object.assign(new Error('Audius track is not publicly streamable'), { code: 'CAPABILITY_UNAVAILABLE' })
         }
-        const url = new URL(`tracks/${track.id}/stream`, AUDIUS_API)
-        url.searchParams.set('skip_play_count', 'true')
-        url.searchParams.set('_t', String(now()))
-        return verifyPublicAudioUrl(url.toString(), { fetchImpl, signal, now })
+        return audiusStreamUrl(track.id, now())
       }
       if (track.source === 'wikimedia') {
         return safeHttpsUrl(track.audioUrl, 'upload.wikimedia.org') || (await lookupWikimedia(track.id, signal)).audioUrl

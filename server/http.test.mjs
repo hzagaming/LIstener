@@ -66,6 +66,26 @@ test('serves search and resolve endpoints', async () => {
   ])
 })
 
+test('accepts trailing slashes on API routes without returning 404', async () => {
+  const service = {
+    sources: ['apple'],
+    sourceCapabilities: { apple: { search: true, playback: true, lyrics: false, download: false } },
+    async searchDetailed() { return { tracks: [], hasMore: false, cached: false, providerErrors: [] } },
+  }
+
+  await withServer(createApiHandler({ service }), async (baseUrl) => {
+    for (const path of [
+      '/api/health/',
+      '/api/auth/me/',
+      '/api/recommendations/region/',
+      '/api/music/search/?q=test&provider=all&page=1&page_size=20',
+    ]) {
+      const response = await fetch(`${baseUrl}${path}`)
+      assert.equal(response.status, 200, path)
+    }
+  })
+})
+
 test('aborts a search subscription when its client disconnects', async () => {
   let markStarted
   let markAborted

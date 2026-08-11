@@ -9,7 +9,8 @@ import { playlists, tracks as initialTracks } from './data/catalog'
 import { localFileStem, readLocalLyrics, selectLocalAudioFiles } from './localFiles.mjs'
 import {
   autoplayMediaMatches, collectionPlaybackPlan, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
-  mediaErrorAction, nextDirectFullTrack, playbackUnavailableTrack, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
+  mediaErrorAction, nextDirectFullTrack, playbackUnavailableTrack, playbackVisualState, playControlDisabled, preferResolvedCurrent, queueWithoutTrack,
+  removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 import {
@@ -53,7 +54,7 @@ const projectLinks = [
   { label: 'GitHub 仓库', href: 'https://github.com/hzagaming/LIstener' },
   { label: 'Issue 仓库', href: 'https://github.com/hzagaming/LIstener/issues' },
   { label: 'Commit 记录', href: 'https://github.com/hzagaming/LIstener/commits/main' },
-  { label: 'v0.10.2 发布说明', href: 'https://github.com/hzagaming/LIstener/releases/tag/v0.10.2' },
+  { label: '当前版本公告', href: 'https://github.com/hzagaming/LIstener/blob/main/CHANGELOG.md' },
   { label: 'GitHub Releases', href: 'https://github.com/hzagaming/LIstener/releases' },
   { label: 'HZAGAMING 主页', href: 'https://github.com/hzagaming' },
 ] as const
@@ -1801,7 +1802,7 @@ function App() {
     setCurrent(invalidated)
     setProgress(0)
     setDuration(initialPlaybackDuration(invalidated))
-    setQueue((previous) => previous.map(update))
+    setQueue((previous) => queueWithoutTrack(previous, currentKey))
     setResults((previous) => previous.map(update))
     setHomeTracks((previous) => previous.map(update))
     setLiked((previous) => previous.has(currentKey) ? new Map(previous).set(currentKey, invalidated) : previous)
@@ -2270,7 +2271,7 @@ function App() {
 
               <section className="account-panel settings-panel settings-panel--project">
                 <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
-                <p>Listener 0.10.2 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <p>Listener 0.10.3 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
                 <div className="project-links">
                   {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
                 </div>

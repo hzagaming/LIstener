@@ -14,6 +14,12 @@ export const nextDirectFullTrack = (tracks, currentKey) => {
   )) ?? null
 }
 
+export const queueWithoutTrack = (tracks, currentKey) => (
+  Array.isArray(tracks)
+    ? tracks.filter((track) => `${track.source}:${track.id}` !== currentKey)
+    : []
+)
+
 const shuffleTracks = (tracks, random) => {
   const shuffled = [...tracks]
   for (let index = shuffled.length - 1; index > 0; index -= 1) {

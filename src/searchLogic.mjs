@@ -94,6 +94,23 @@ export const mergeSearchPages = (current, incoming, limit) => {
 
 const searchableText = (value) => String(value ?? '').normalize('NFKC').toLocaleLowerCase()
 
+const textRelevance = (track, query) => {
+  if (!query) return 0
+  const title = searchableText(track?.title)
+  const artist = searchableText(track?.artist)
+  const album = searchableText(track?.album)
+  if (title === query) return 0
+  if (artist === query) return 1
+  if (title.includes(query)) return 2
+  if (artist.includes(query)) return 3
+  if (album.includes(query)) return 4
+  const text = `${title} ${artist} ${album}`
+  const terms = query.split(/\s+/).filter(Boolean)
+  if (terms.length && terms.every((term) => text.includes(term))) return 5
+  if (terms.some((term) => text.includes(term))) return 6
+  return 7
+}
+
 export const refineSearchTracks = (tracks, options = {}) => {
   if (!Array.isArray(tracks)) return []
   const domain = ['title', 'artist', 'album'].includes(options.domain) ? options.domain : 'all'
@@ -108,7 +125,10 @@ export const refineSearchTracks = (tracks, options = {}) => {
     if (duration === 'long') return Number.isFinite(seconds) && seconds > 300
     return true
   })
-  if (sort === 'relevance') return filtered
+  if (sort === 'relevance') return filtered.map((track, index) => ({ track, index })).sort((left, right) => (
+    textRelevance(left.track, query) - textRelevance(right.track, query)
+    || left.index - right.index
+  )).map(({ track }) => track)
   return filtered.map((track, index) => ({ track, index })).sort((left, right) => {
     if (sort === 'duration') {
       const leftDuration = Number(left.track?.duration) > 0 ? Number(left.track.duration) : Number.POSITIVE_INFINITY

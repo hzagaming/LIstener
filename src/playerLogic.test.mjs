@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   autoplayMediaMatches, collectionPlaybackPlan, endedPlaybackAction, focusTrapTargetIndex, initialPlaybackDuration, mediaLoadKey, playableTracks,
-  mediaErrorAction, nextDirectFullTrack, playbackUnavailableTrack, playbackVisualState, playControlDisabled, preferResolvedCurrent, removalFocusIndex, seekPosition,
+  mediaErrorAction, nextDirectFullTrack, playbackUnavailableTrack, playbackVisualState, playControlDisabled, preferResolvedCurrent, queueWithoutTrack,
+  removalFocusIndex, seekPosition,
   shouldApplyEndedAction, shouldCancelPendingTrack, shouldRestartCurrentTrack,
 } from './playerLogic.mjs'
 
@@ -52,6 +53,13 @@ test('advances past failed candidates to the next direct full track without loop
   assert.equal(nextDirectFullTrack(tracks, 'test:1'), tracks[3])
   assert.equal(nextDirectFullTrack(tracks, 'test:4'), null)
   assert.equal(nextDirectFullTrack(tracks, 'test:missing'), null)
+})
+
+test('removes a failed track from automatic queue rotation', () => {
+  const tracks = [track('1'), track('2'), track('1'), track('3')]
+
+  assert.deepEqual(queueWithoutTrack(tracks, 'test:1'), [tracks[1], tracks[3]])
+  assert.deepEqual(queueWithoutTrack(null, 'test:1'), [])
 })
 
 test('builds ordered, shuffled, and single-repeat collection playback plans', () => {

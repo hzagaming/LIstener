@@ -151,6 +151,9 @@ export const createApiHandler = ({
     if (request.method === 'OPTIONS') return writeJson(response, 204, null, corsHeaders)
 
     const url = new URL(request.url ?? '/', 'http://listener.local')
+    if (url.pathname.startsWith('/api/') && url.pathname.endsWith('/')) {
+      url.pathname = url.pathname.replace(/\/+$/, '')
+    }
     const isVersionedRequest = url.pathname.startsWith('/api/music/')
     const requestMeta = (extra = {}) => ({
       request_id: id,

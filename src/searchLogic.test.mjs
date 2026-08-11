@@ -143,6 +143,19 @@ test('sorts advanced search results predictably and keeps unknown durations last
   assert.deepEqual(refineSearchTracks(null, { query: '', domain: 'all', duration: 'all', sort: 'title' }), [])
 })
 
+test('ranks direct text matches ahead of unrelated cross-source results', () => {
+  const tracks = [
+    { id: 'unrelated', title: 'Newsreal Episode', artist: 'Fae', album: 'Archive', duration: 300 },
+    { id: 'artist', title: 'Style', artist: 'Taylor Swift', album: '1989', duration: 231 },
+    { id: 'title', title: 'Taylor Swift Live', artist: 'Public Artist', album: 'Concert', duration: 220 },
+    { id: 'exact', title: 'Taylor Swift', artist: 'Public Artist', album: 'Single', duration: 210 },
+  ]
+
+  assert.deepEqual(refineSearchTracks(tracks, {
+    query: 'Taylor Swift', domain: 'all', duration: 'all', sort: 'relevance',
+  }).map(({ id }) => id), ['exact', 'artist', 'title', 'unrelated'])
+})
+
 test('validates the versioned paginated search envelope', () => {
   const valid = { id: '1' }
   assert.deepEqual(parseSearchPage({

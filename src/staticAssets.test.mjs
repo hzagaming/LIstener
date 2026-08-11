@@ -20,13 +20,13 @@ test('release metadata stays synchronized across the app shell', async () => {
   const worker = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')
   const changelog = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8')
 
-  assert.equal(manifest.version, '0.10.2')
+  assert.equal(manifest.version, '0.10.3')
   assert.equal(lock.version, manifest.version)
   assert.equal(lock.packages[''].version, manifest.version)
-  assert.match(app, /Listener 0\.10\.2/)
-  assert.match(readme, /当前版本：`0\.10\.2`/)
-  assert.match(worker, /listener-shell-v0\.10\.2/)
-  assert.match(changelog, /## 当前公告\s+### 0\.10\.2[\s\S]*?## 历史公告\s+### 0\.10\.1/)
+  assert.match(app, /Listener 0\.10\.3/)
+  assert.match(readme, /当前版本：`0\.10\.3`/)
+  assert.match(worker, /listener-shell-v0\.10\.3/)
+  assert.match(changelog, /## 当前公告\s+### 0\.10\.3[\s\S]*?## 历史公告\s+### 0\.10\.2/)
 })
 
 test('the production build targets the GitHub Pages project path', async () => {
@@ -90,14 +90,24 @@ test('touch devices keep primary playback affordances visible', async () => {
   assert.match(styles, /@media\s*\(hover:\s*none\)[\s\S]*?\.cover-play[\s\S]*?opacity:\s*1/)
   assert.match(styles, /\.track-row__play\s*\{[^}]*min-width:\s*40px/)
   assert.match(styles, /@media\s*\(hover:\s*none\)[\s\S]*?\.track-row__play span[^}]*display:\s*none[\s\S]*?\.track-row__play svg[^}]*display:\s*inline/)
-  assert.deepEqual(trackColumns.map((match) => Number(match[1])), [40, 40, 40])
+  assert.deepEqual(trackColumns.map((match) => Number(match[1])), [40, 40, 44])
 })
 
 test('mobile layouts use the dynamic viewport', async () => {
   const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8')
+  const mobile = styles.slice(styles.indexOf('@media (max-width: 820px)'), styles.indexOf('@media (max-width: 420px)'))
 
   assert.match(styles, /min-height:\s*100dvh/)
   assert.match(styles, /max-height:[^;]*100dvh/)
+  assert.match(mobile, /\.mobile-menu,\s*\.sidebar__close,\s*\.avatar\s*\{[^}]*min-width:\s*44px[^}]*min-height:\s*44px/)
+  assert.match(mobile, /\.search-box,\s*\.primary-button,\s*\.secondary-button\s*\{[^}]*min-height:\s*44px/)
+  assert.match(mobile, /\.track-row__play\s*\{[^}]*min-width:\s*44px/)
+  assert.match(mobile, /\.track-row__actions \.icon-button,\s*\.track-row__actions \.like-button\s*\{[^}]*min-width:\s*44px[^}]*min-height:\s*44px/)
+  assert.match(mobile, /\.collection-actions button,\s*\.compact-empty button\s*\{[^}]*min-height:\s*44px/)
+  assert.match(mobile, /\.player__progress input\s*\{[^}]*height:\s*44px[^}]*margin-top:\s*-21px/)
+  assert.match(styles, /\.settings-field select\s*\{[^}]*min-height:\s*44px/)
+  assert.match(styles, /\.choice-buttons button\s*\{[^}]*min-height:\s*44px/)
+  assert.match(styles, /\.accent-choices button\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/)
 })
 
 test('short desktop viewports keep every sidebar section reachable', async () => {
@@ -358,6 +368,7 @@ test('a stalled audio source cannot leave the player buffering forever', async (
   assert.match(mediaFailure, /setHomeTracks\(\(previous\) => previous\.map\(update\)\)/)
   assert.match(mediaFailure, /setPlaylistRecommendations\([\s\S]*?track: update\(recommendation\.track\)/)
   assert.match(mediaFailure, /setHistory\([\s\S]*?track: update\(item\.track\)/)
+  assert.match(mediaFailure, /setQueue\(\(previous\) => queueWithoutTrack\(previous, currentKey\)\)/)
   assert.match(app, /onPlaying=\{\(event\) => \{ if \(isCurrentAudio\(event\.currentTarget\)\) \{ clearBufferingTimeout\(\)/)
   assert.match(app, /onPause=\{\(event\) => \{ if \(isCurrentAudio\(event\.currentTarget\)\) \{ clearBufferingTimeout\(\)/)
 })

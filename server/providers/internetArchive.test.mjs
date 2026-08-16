@@ -68,7 +68,7 @@ test('searches Archive audio items and expands safe browser-playable files', asy
   assert.equal(search.url.searchParams.get('page'), '3')
   assert.equal(search.url.searchParams.get('output'), 'json')
   assert.equal(search.options.redirect, 'manual')
-  assert.equal(search.options.headers['User-Agent'], 'Listener/1.0.0 (+https://github.com/hzagaming/LIstener)')
+  assert.equal(search.options.headers['User-Agent'], 'Listener/1.0.1 (+https://github.com/hzagaming/LIstener)')
   assert.equal(provider.maxSearchResults, 10)
   assert.deepEqual(provider.capabilities, { search: true, playback: true, lyrics: false, download: true })
 })

@@ -20,13 +20,13 @@ test('release metadata stays synchronized across the app shell', async () => {
   const worker = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')
   const changelog = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8')
 
-  assert.equal(manifest.version, '1.0.0')
+  assert.equal(manifest.version, '1.0.1')
   assert.equal(lock.version, manifest.version)
   assert.equal(lock.packages[''].version, manifest.version)
-  assert.match(app, /Listener 1\.0\.0/)
-  assert.match(readme, /当前版本：`1\.0\.0`/)
-  assert.match(worker, /listener-shell-v1\.0\.0/)
-  assert.match(changelog, /## 当前公告\s+### 1\.0\.0[\s\S]*?## 历史公告\s+### 0\.10\.4/)
+  assert.match(app, /Listener 1\.0\.1/)
+  assert.match(readme, /当前版本：`1\.0\.1`/)
+  assert.match(worker, /listener-shell-v1\.0\.1/)
+  assert.match(changelog, /## 当前公告\s+### 1\.0\.1[\s\S]*?## 历史公告\s+### 1\.0\.0/)
 })
 
 test('the production build targets the GitHub Pages project path', async () => {

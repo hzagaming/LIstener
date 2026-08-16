@@ -224,7 +224,6 @@ export const createPublicMusicProvider = ({
   fetchImpl = globalThis.fetch,
   musicBrainzIntervalMs = 1_000,
   requestTimeoutMs = 4_000,
-  statusTimeoutMs = 4_000,
   now = Date.now,
   waitImpl = abortableDelay,
 } = {}) => {
@@ -234,9 +233,6 @@ export const createPublicMusicProvider = ({
   }
   if (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 100 || requestTimeoutMs > 30_000) {
     throw new Error('valid request timeout is required')
-  }
-  if (!Number.isInteger(statusTimeoutMs) || statusTimeoutMs < 1 || statusTimeoutMs > 30_000) {
-    throw new Error('valid status timeout is required')
   }
   let nextMusicBrainzRequestAt = 0
   let musicBrainzQueue = Promise.resolve()
@@ -476,21 +472,11 @@ export const createPublicMusicProvider = ({
     },
 
     async status(signal) {
-      const statusSignal = createRequestSignal(signal, statusTimeoutMs)
-      const checks = await Promise.allSettled([
-        apple.status(statusSignal).then((status) => status.online && status.sources.includes('apple') ? 'apple' : Promise.reject()),
-        searchAudius('Listener', 1, 1, statusSignal).then(() => 'audius'),
-        searchMusicBrainz('Listener', 1, 1, statusSignal).then(() => 'musicbrainz'),
-        searchWikimedia('music', 1, 1, statusSignal).then(() => 'wikimedia'),
-        searchInternetArchive('music', 1, 1, statusSignal).then(() => 'internetarchive'),
-      ])
       if (signal?.aborted) throw signal.reason
-      const sources = publicMusicSources.filter((source) => checks.some((result) => result.status === 'fulfilled' && result.value === source))
-      if (!sources.length) return fallback.status(signal)
       return {
         online: true,
-        sources,
-        capabilities: Object.fromEntries(sources.map((source) => [source, capabilities[source]])),
+        sources: publicMusicSources,
+        capabilities,
       }
     },
   }

@@ -274,12 +274,13 @@ test('recognizes every platform locally and looks up supported public IDs', asyn
   assert.equal((await provider.lookup({ source: 'musicbrainz', id: musicBrainzFixture.id })).title, 'Blow Your Mind')
 })
 
-test('reports only responsive public sources and respects the MusicBrainz one-request-per-second rule', async () => {
+test('reports configured public sources without startup probes and respects the MusicBrainz request interval', async () => {
   let timestamp = 0
+  let appleStatusCalls = 0
   const waits = []
   const requests = []
   const provider = createPublicMusicProvider({
-    apple,
+    apple: { ...apple, status: async () => { appleStatusCalls += 1; return apple.status() } },
     fallback,
     fetchImpl: fixtureFetch(requests, 'https://commons.wikimedia.org'),
     now: () => timestamp,
@@ -290,18 +291,29 @@ test('reports only responsive public sources and respects the MusicBrainz one-re
   await provider.searchPage('second', { provider: 'musicbrainz' })
   assert.deepEqual(waits, [1_000])
 
+  const requestCount = requests.length
   const status = await provider.status()
-  assert.deepEqual(status.sources, ['apple', 'audius', 'musicbrainz', 'internetarchive'])
+  assert.equal(requests.length, requestCount)
+  assert.equal(appleStatusCalls, 0)
+  assert.deepEqual(status.sources, publicMusicSources)
   assert.equal(status.capabilities.audius.download, true)
   assert.equal(status.capabilities.musicbrainz.playback, false)
   assert.deepEqual(publicMusicSources, ['apple', 'audius', 'musicbrainz', 'wikimedia', 'internetarchive'])
 })
 
-test('bounds the whole status probe so one stalled source cannot hold the UI open', async () => {
+test('rejects an already-cancelled public source status request', async () => {
+  const provider = createPublicMusicProvider({ apple, fallback, fetchImpl: fixtureFetch([]) })
+  const controller = new AbortController()
+  const reason = new Error('cancel status')
+  controller.abort(reason)
+
+  await assert.rejects(provider.status(controller.signal), (error) => error === reason)
+})
+
+test('returns public source status immediately even when every remote fetch would stall', async () => {
   const provider = createPublicMusicProvider({
     apple,
     fallback,
-    statusTimeoutMs: 10,
     fetchImpl: async (_input, options) => new Promise((resolve, reject) => {
       options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
     }),
@@ -313,5 +325,5 @@ test('bounds the whole status probe so one stalled source cannot hold the UI ope
   ])
 
   assert.notEqual(result, 'still-pending')
-  assert.deepEqual(result.sources, ['apple'])
+  assert.deepEqual(result.sources, publicMusicSources)
 })

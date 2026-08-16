@@ -48,7 +48,7 @@ test('streams licensed Internet Archive audio across official download hosts', a
     'https://archive.org/download/open/file.mp3',
     'https://ia801.example.us.archive.org/file.mp3',
   ])
-  assert.equal(calls[1].options.headers['User-Agent'], 'Listener/1.0.0 (+https://github.com/hzagaming/LIstener)')
+  assert.equal(calls[1].options.headers['User-Agent'], 'Listener/1.0.1 (+https://github.com/hzagaming/LIstener)')
 })
 
 test('rejects unsafe hosts, redirects, MIME types, and oversized audio', async () => {

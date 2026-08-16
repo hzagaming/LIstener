@@ -1967,7 +1967,7 @@ function App() {
             <kbd>⌘/Ctrl K</kbd>
           </button>
           <div className="topbar__actions">
-            <div className="source-selector" role="status" aria-live="polite"><span className={`status-dot ${!online ? 'offline' : providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`} />{!online ? '离线模式' : providerChecking ? '正在连接' : providerStatus.online ? '音乐源在线' : '演示模式'}</div>
+            <div className="source-selector" role="status" aria-live="polite"><span className={`status-dot ${!online ? 'offline' : providerChecking ? 'checking' : providerStatus.online ? '' : 'offline'}`} />{!online ? '离线模式' : providerChecking ? '正在连接' : providerStatus.online ? '音乐源已接入' : '演示模式'}</div>
             <button className="avatar" aria-label={user ? `账号 ${user.email}` : '登录或迁移记录'} title={user ? user.email : '账号与同步'} onClick={() => navigate('account')}>{user?.email[0]?.toUpperCase() || 'L'}</button>
           </div>
         </header>
@@ -2271,7 +2271,7 @@ function App() {
 
               <section className="account-panel settings-panel settings-panel--project">
                 <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
-                <p>Listener 1.0.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <p>Listener 1.0.1 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
                 <div className="project-links">
                   {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
                 </div>

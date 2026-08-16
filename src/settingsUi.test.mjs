@@ -20,7 +20,7 @@ test('ships a settings center with playback, appearance, source, and project con
   assert.match(app, /YouTube Music 使用官方 Data API 搜索元数据，不抽取音视频/)
   assert.match(app, /静态版可直连 Apple Music、Audius、MusicBrainz、Wikimedia Commons 与 Internet Archive/)
   assert.match(app, /YouTube Music 与其余平台名称搜索仍需部署服务端及对应 Key/)
-  assert.match(app, /Listener 1\.0\.0/)
+  assert.match(app, /Listener 1\.0\.1/)
   assert.match(app, /地址 \/ ID 解析/)
   assert.match(app, /if \(!providerStatus\.sources\.includes\(match\.source\)\)/)
   assert.match(app, /https:\/\/github\.com\/hzagaming\/LIstener\/issues/)

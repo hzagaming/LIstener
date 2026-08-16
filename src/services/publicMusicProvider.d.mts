@@ -7,7 +7,6 @@ export const createPublicMusicProvider: (options: {
   fallback: MusicProvider
   fetchImpl?: typeof fetch
   musicBrainzIntervalMs?: number
-  statusTimeoutMs?: number
   now?: () => number
   waitImpl?: (milliseconds: number, signal?: AbortSignal) => Promise<unknown>
 }) => MusicProvider

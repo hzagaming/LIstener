@@ -31,7 +31,7 @@ test('searches Audius with a server-side API key and normalizes public tracks', 
     minIntervalMs: 0,
   })
 
-  assert.deepEqual(await provider.search('  hyper  ', 99), [{
+  assert.deepEqual(await provider.search('  hyper  ', 99, undefined, 3), [{
     id: 'D7KyD',
     title: 'Hypermantra',
     artist: 'Camoufly',
@@ -47,7 +47,7 @@ test('searches Audius with a server-side API key and normalizes public tracks', 
   assert.equal(request.url.pathname, '/v1/tracks/search')
   assert.equal(request.url.searchParams.get('query'), 'hyper')
   assert.equal(request.url.searchParams.get('limit'), '50')
-  assert.equal(request.url.searchParams.get('offset'), '0')
+  assert.equal(request.url.searchParams.get('offset'), '100')
   assert.equal(request.url.searchParams.get('api_key'), 'test-key')
   assert.equal(request.options.redirect, 'manual')
   assert.equal(provider.capabilities.download, false)

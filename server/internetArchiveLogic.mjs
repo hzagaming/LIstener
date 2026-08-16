@@ -4,7 +4,12 @@ const identifierPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
 const audioFormats = new Map([
   ['.mp3', /mp3/i],
   ['.ogg', /ogg vorbis/i],
+  ['.oga', /ogg vorbis/i],
   ['.flac', /flac/i],
+  ['.m4a', /(?:m4a|mpeg-4 audio|aac)/i],
+  ['.aac', /aac/i],
+  ['.opus', /opus/i],
+  ['.wav', /(?:wave|wav)/i],
 ])
 
 const text = (value, fallback = '') => {
@@ -77,7 +82,7 @@ export const parseArchiveTrackId = (value) => {
 export const archiveSearchUrl = (query, page = 1) => {
   const phrase = query.replace(/[\\"]/g, '\\$&')
   const url = new URL('/advancedsearch.php', ARCHIVE_BASE_URL)
-  url.searchParams.set('q', `(title:"${phrase}" OR creator:"${phrase}") AND mediatype:audio AND NOT access-restricted-item:true`)
+  url.searchParams.set('q', `(title:"${phrase}" OR creator:"${phrase}" OR subject:"${phrase}") AND mediatype:audio AND NOT access-restricted-item:true`)
   for (const field of ['identifier', 'mediatype', 'title', 'creator']) url.searchParams.append('fl[]', field)
   url.searchParams.set('rows', '10')
   url.searchParams.set('page', String(Math.min(100, Math.max(1, page))))
@@ -92,6 +97,14 @@ export const archiveSearchIdentifiers = (payload) => {
       ? [document.identifier]
       : []
   )).slice(0, 10)
+}
+
+export const archiveSearchHasMore = (payload, page = 1) => {
+  archiveSearchIdentifiers(payload)
+  const total = Number(payload.response.numFound)
+  return Number.isSafeInteger(total) && total >= 0
+    ? Math.min(100, Math.max(1, page)) * 10 < total
+    : payload.response.docs.length >= 10
 }
 
 export const normalizeArchiveItem = (item, requestedIdentifier) => {
@@ -117,7 +130,7 @@ export const normalizeArchiveItem = (item, requestedIdentifier) => {
       audioUrl: archiveMediaUrl(identifier, file.name),
       cover: 'gold',
       sourceUrl: archiveDetailsUrl(identifier),
-      quality: file.extension === '.flac' ? 'lossless' : 'standard',
+      quality: ['.flac', '.wav'].includes(file.extension) ? 'lossless' : 'standard',
       capabilities: { playback: 'full', lyrics: false, download: downloadable },
     }]
   })

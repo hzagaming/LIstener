@@ -81,6 +81,7 @@ const wikimediaFixture = {
     descriptionurl: 'https://commons.wikimedia.org/?curid=42',
     mime: 'audio/ogg',
     user: 'Open Artist',
+    extmetadata: { Duration: { value: '185.4' } },
   }],
 }
 
@@ -239,10 +240,12 @@ test('normalizes MusicBrainz metadata and Wikimedia open audio while rejecting u
   assert.equal(musicBrainz.tracks[0].artist, 'Dua Lipa')
   assert.equal(musicBrainz.tracks[0].capabilities.playback, 'none')
   assert.equal(wikimedia.tracks[0].audioUrl, wikimediaFixture.imageinfo[0].url)
+  assert.equal(wikimedia.tracks[0].duration, 185)
   assert.deepEqual(wikimedia.tracks[0].capabilities, { playback: 'full', lyrics: false, download: true })
   const commonsRequest = requests.find(({ url }) => url.origin === 'https://commons.wikimedia.org').url
   assert.equal(commonsRequest.searchParams.get('origin'), '*')
   assert.equal(commonsRequest.searchParams.get('gsrnamespace'), '6')
+  assert.equal(commonsRequest.searchParams.get('iiextmetadatafilter'), 'Duration')
 
   const unsafe = createPublicMusicProvider({
     apple,
@@ -253,6 +256,21 @@ test('normalizes MusicBrainz metadata and Wikimedia open audio while rejecting u
     }] } }),
   })
   assert.deepEqual((await unsafe.searchPage('unsafe', { provider: 'wikimedia' })).tracks, [])
+})
+
+test('keeps Archive pagination available when catalog totals exceed sparse playable files', async () => {
+  const provider = createPublicMusicProvider({
+    apple,
+    fallback,
+    fetchImpl: async (input) => Response.json(new URL(input).pathname === '/advancedsearch.php'
+      ? { response: { numFound: 25, docs: [{ identifier: 'open-concert', mediatype: 'audio' }] } }
+      : archiveItemFixture),
+  })
+
+  const page = await provider.searchPage('Public', { provider: 'internetarchive', page: 1, pageSize: 10 })
+
+  assert.equal(page.tracks.length, 1)
+  assert.equal(page.hasMore, true)
 })
 
 test('recognizes every platform locally and looks up supported public IDs', async () => {

@@ -161,10 +161,11 @@ export const createAudiusProvider = ({
     async search(query, limit = 20, signal, page = 1) {
       const value = query.trim()
       if (!value) return []
+      const boundedLimit = Math.min(50, Math.max(1, limit))
       const url = new URL('tracks/search', endpoint)
       url.searchParams.set('query', value)
-      url.searchParams.set('limit', String(Math.min(50, Math.max(1, limit))))
-      url.searchParams.set('offset', String(Math.max(0, page - 1) * limit))
+      url.searchParams.set('limit', String(boundedLimit))
+      url.searchParams.set('offset', String(Math.max(0, page - 1) * boundedLimit))
       const payload = await request(url, signal)
       if (!Array.isArray(payload?.data)) throw new Error('invalid Audius response')
       return payload.data.map((track) => normalizeTrack(track, normalizedKey)).filter(Boolean)

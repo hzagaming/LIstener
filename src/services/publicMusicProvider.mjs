@@ -3,6 +3,7 @@ import { abortableDelay, createRequestSignal } from '../requestPolicy.mjs'
 import { createSearchFallbackError, diversifyRankedTracks, playbackRank, searchFallbackTracks } from '../searchLogic.mjs'
 import {
   archiveDownload,
+  archiveSearchHasMore,
   archiveMediaUrl,
   archiveSearchIdentifiers,
   archiveSearchUrl,
@@ -11,16 +12,13 @@ import {
   normalizeArchiveItem,
   parseArchiveTrackId,
 } from '../../server/internetArchiveLogic.mjs'
+import { createWikimediaQuery, normalizeWikimediaPage, WIKIMEDIA_API, wikimediaPageId } from '../../server/wikimediaLogic.mjs'
 
 const AUDIUS_API = 'https://api.audius.co/v1/'
 const MUSICBRAINZ_API = 'https://musicbrainz.org/ws/2/recording/'
-const WIKIMEDIA_API = 'https://commons.wikimedia.org/w/api.php'
 const MAX_RESPONSE_BYTES = 2_097_152
 const audiusId = /^[A-Za-z0-9_-]{1,128}$/
 const recordingId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
-const pageId = /^\d+$/
-const audioExtension = /\.(?:aac|flac|m4a|mid|midi|mp3|oga|ogg|opus|wav|webm)$/i
-const oggExtension = /\.(?:oga|ogg)$/i
 const capabilities = {
   apple: { search: true, playback: true, lyrics: false, download: false },
   audius: { search: true, playback: true, lyrics: false, download: true },
@@ -161,35 +159,6 @@ const normalizeMusicBrainz = (recording) => {
   }
 }
 
-const normalizeWikimedia = (page) => {
-  const id = String(page?.pageid ?? '')
-  const title = typeof page?.title === 'string'
-    ? page.title.replace(/^File:/i, '').replace(audioExtension, '').trim()
-    : ''
-  const info = Array.isArray(page?.imageinfo) ? page.imageinfo[0] : null
-  if (!pageId.test(id) || !title || !info) return null
-  const audioUrl = safeHttpsUrl(info.url, 'upload.wikimedia.org')
-  const sourcePage = safeHttpsUrl(info.descriptionurl, 'commons.wikimedia.org')
-    || `https://commons.wikimedia.org/?curid=${id}`
-  const mime = typeof info.mime === 'string' ? info.mime.toLocaleLowerCase() : ''
-  const playable = mime.startsWith('audio/')
-    || (mime === 'application/ogg' && audioUrl && oggExtension.test(new URL(audioUrl).pathname))
-  if (!audioUrl || !playable) return null
-  return {
-    id,
-    title,
-    artist: typeof info.user === 'string' && info.user.trim() ? info.user.trim() : '未知上传者',
-    album: 'Wikimedia Commons',
-    duration: 0,
-    source: 'wikimedia',
-    audioUrl,
-    cover: 'gold',
-    sourceUrl: sourcePage,
-    quality: 'standard',
-    capabilities: { playback: 'full', lyrics: false, download: true },
-  }
-}
-
 const interleave = (pages, limit) => {
   const merged = []
   const seen = new Set()
@@ -300,23 +269,12 @@ export const createPublicMusicProvider = ({
     return result
   }, signal)
 
-  const wikimediaQuery = () => {
-    const url = new URL(WIKIMEDIA_API)
-    url.searchParams.set('action', 'query')
-    url.searchParams.set('prop', 'imageinfo')
-    url.searchParams.set('iiprop', 'url|mime|user')
-    url.searchParams.set('format', 'json')
-    url.searchParams.set('formatversion', '2')
-    url.searchParams.set('origin', '*')
-    url.searchParams.set('maxage', '300')
-    url.searchParams.set('smaxage', '300')
-    return url
-  }
+  const wikimediaQuery = () => createWikimediaQuery(WIKIMEDIA_API)
 
   const requestWikimedia = async (url, signal) => {
     const payload = await request(url, signal, 'Wikimedia')
     if (!Array.isArray(payload?.query?.pages)) throw new Error('invalid Wikimedia response')
-    return payload.query.pages.map(normalizeWikimedia).filter(Boolean)
+    return payload.query.pages.map(normalizeWikimediaPage).filter(Boolean)
   }
 
   const searchWikimedia = (query, pageSize, page, signal) => {
@@ -331,7 +289,7 @@ export const createPublicMusicProvider = ({
   }
 
   const lookupWikimedia = async (id, signal) => {
-    if (!pageId.test(String(id))) throw new Error('invalid Wikimedia track id')
+    if (!wikimediaPageId.test(String(id))) throw new Error('invalid Wikimedia track id')
     const url = wikimediaQuery()
     url.searchParams.set('pageids', String(id))
     const result = (await requestWikimedia(url, signal)).find((item) => item.id === String(id))
@@ -350,7 +308,7 @@ export const createPublicMusicProvider = ({
     const settled = await Promise.allSettled(identifiers.map((identifier) => archiveMetadata(identifier, signal)))
     if (signal?.aborted) throw signal.reason
     const groups = settled.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
-    return interleaveArchiveTracks(groups, pageSize)
+    return { tracks: interleaveArchiveTracks(groups, pageSize), hasMore: archiveSearchHasMore(payload, page) }
   }
 
   const lookupInternetArchive = async (id, signal) => {
@@ -365,14 +323,16 @@ export const createPublicMusicProvider = ({
 
   const searchSource = async (source, query, pageSize, page, signal) => {
     if (source === 'apple') return apple.searchPage(query, { provider: 'apple', pageSize, page }, signal)
+    if (source === 'internetarchive') {
+      const result = await searchInternetArchive(query, pageSize, page, signal)
+      return { ...result, page }
+    }
     const tracks = source === 'audius'
       ? await searchAudius(query, pageSize, page, signal)
       : source === 'musicbrainz'
         ? await searchMusicBrainz(query, pageSize, page, signal)
-        : source === 'wikimedia'
-          ? await searchWikimedia(query, pageSize, page, signal)
-          : await searchInternetArchive(query, pageSize, page, signal)
-    const sourceLimit = ['wikimedia', 'internetarchive'].includes(source) ? 10 : 50
+        : await searchWikimedia(query, pageSize, page, signal)
+    const sourceLimit = source === 'wikimedia' ? 10 : 50
     return { tracks, page, hasMore: tracks.length >= Math.min(sourceLimit, pageSize) }
   }
 

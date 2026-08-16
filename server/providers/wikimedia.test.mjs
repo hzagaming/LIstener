@@ -28,7 +28,7 @@ test('searches Wikimedia Commons audio with bounded pagination and normalizes pl
     title: 'Beethoven - Moonlight sonata',
     artist: 'Open Music Archive',
     album: 'Wikimedia Commons',
-    duration: 0,
+    duration: 301,
     source: 'wikimedia',
     audioUrl: 'https://upload.wikimedia.org/wikipedia/commons/6/6f/Moonlight.ogg?download=1',
     cover: 'gold',
@@ -44,13 +44,14 @@ test('searches Wikimedia Commons audio with bounded pagination and normalizes pl
   assert.equal(request.url.searchParams.get('gsrnamespace'), '6')
   assert.equal(request.url.searchParams.get('gsrlimit'), '10')
   assert.equal(request.url.searchParams.get('gsroffset'), '20')
-  assert.equal(request.url.searchParams.get('iiprop'), 'url|mime|user')
+  assert.equal(request.url.searchParams.get('iiprop'), 'url|mime|user|extmetadata')
+  assert.equal(request.url.searchParams.get('iiextmetadatafilter'), 'Duration')
   assert.equal(request.url.searchParams.get('maxage'), '300')
   assert.equal(request.url.searchParams.get('smaxage'), '300')
   assert.equal(request.url.searchParams.get('formatversion'), '2')
   assert.equal(request.url.searchParams.get('origin'), '*')
   assert.equal(request.options.redirect, 'manual')
-  assert.equal(request.options.headers['User-Agent'], 'Listener/1.0.1 (+https://github.com/hzagaming/LIstener)')
+  assert.equal(request.options.headers['User-Agent'], 'Listener/1.2.0 (+https://github.com/hzagaming/LIstener)')
   assert.equal(provider.capabilities.playback, true)
   assert.equal(provider.capabilities.download, true)
   assert.equal(provider.maxSearchResults, 10)
@@ -64,11 +65,16 @@ test('accepts audio MIME types and filters non-audio or untrusted Wikimedia fiel
       { ...page, pageid: 3, imageinfo: [{ ...page.imageinfo[0], mime: 'image/jpeg', url: 'https://upload.wikimedia.org/cover.jpg' }] },
       { ...page, pageid: 4, imageinfo: [{ ...page.imageinfo[0], url: 'https://attacker.example/audio.ogg' }] },
       { ...page, pageid: 5, imageinfo: [{ ...page.imageinfo[0], descriptionurl: 'https://attacker.example/source' }] },
+      { ...page, pageid: 6, title: 'File:Unsupported.mid', imageinfo: [{ ...page.imageinfo[0], mime: 'audio/midi', url: 'https://upload.wikimedia.org/audio.mid' }] },
+      { ...page, pageid: 7, title: 'File:Lossless.flac', imageinfo: [{ ...page.imageinfo[0], mime: 'audio/flac', url: 'https://upload.wikimedia.org/audio.flac', extmetadata: { Duration: { value: '91.6' } } }] },
       { ...page, pageid: 'not-an-id' },
     ] } }),
   })
 
-  assert.deepEqual((await provider.search('audio')).map(({ id }) => id), ['1'])
+  const tracks = await provider.search('audio')
+  assert.deepEqual(tracks.map(({ id }) => id), ['1', '7'])
+  assert.equal(tracks[1].duration, 92)
+  assert.equal(tracks[1].quality, 'lossless')
 })
 
 test('looks up and resolves Wikimedia page IDs without accepting mismatched responses', async () => {

@@ -20,13 +20,13 @@ test('release metadata stays synchronized across the app shell', async () => {
   const worker = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')
   const changelog = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8')
 
-  assert.equal(manifest.version, '1.0.1')
+  assert.equal(manifest.version, '1.2.0')
   assert.equal(lock.version, manifest.version)
   assert.equal(lock.packages[''].version, manifest.version)
-  assert.match(app, /Listener 1\.0\.1/)
-  assert.match(readme, /当前版本：`1\.0\.1`/)
-  assert.match(worker, /listener-shell-v1\.0\.1/)
-  assert.match(changelog, /## 当前公告\s+### 1\.0\.1[\s\S]*?## 历史公告\s+### 1\.0\.0/)
+  assert.match(app, /Listener 1\.2\.0/)
+  assert.match(readme, /当前版本：`1\.2\.0`/)
+  assert.match(worker, /listener-shell-v1\.2\.0/)
+  assert.match(changelog, /## 当前公告\s+### 1\.2\.0[\s\S]*?## 历史公告\s+### 1\.0\.1/)
 })
 
 test('the production build targets the GitHub Pages project path', async () => {
@@ -329,7 +329,7 @@ test('the static UI advertises public multi-source search and full-track playbac
 
   assert.match(app, /公共多平台搜索/)
   assert.match(app, /Apple Music、Audius、MusicBrainz、Wikimedia Commons 与 Internet Archive/)
-  assert.match(app, /Audius、Wikimedia Commons 与 Internet Archive 可提供公开完整音频/)
+  assert.match(app, /Archive 已支持 MP3、Ogg\/OGA、FLAC、M4A、AAC、Opus 与 WAV/)
   assert.doesNotMatch(app, />Apple Music 搜索</)
 })
 

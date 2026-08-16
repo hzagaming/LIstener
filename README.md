@@ -2,7 +2,7 @@
 
 一个面向合法多音乐源聚合的 Web 音乐播放器。支持并行搜索、音乐地址/ID 识别、收藏、自建歌单、相似推荐、本地音乐、播放队列、账号同步、离线应用壳和按来源授权的歌词与下载能力。
 
-当前版本：`1.0.1`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
+当前版本：`1.2.0`。版本公告见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 本地运行
 
@@ -121,9 +121,9 @@ MusicBrainz 要求客户端提供可联系的应用标识，并限制为每秒�
 MUSICBRAINZ_CONTACT=ops@example.com npm run server
 ```
 
-Wikimedia Commons 来源使用官方 Action API 搜索文件命名空间中的音频，并直接播放 `upload.wikimedia.org` 公开文件；每个文件的作者、许可和署名要求以结果对应的 Commons 来源页为准。下载时 Node 服务只从固定 Wikimedia 媒体 Host 流式转发明确开放的音频并添加附件响应头，不落盘、不缓存，默认上限 128 MiB、总超时 120 秒。
+Wikimedia Commons 来源使用官方 Action API 搜索文件命名空间中的音频，并直接播放 `upload.wikimedia.org` 公开文件；前后端只将浏览器支持的音频格式标为完整可播，保留官方时长，并识别 FLAC/WAV 无损音质。每个文件的作者、许可和署名要求以结果对应的 Commons 来源页为准。下载时 Node 服务只从固定 Wikimedia 媒体 Host 流式转发明确开放的音频并添加附件响应头，不落盘、不缓存，默认上限 128 MiB、总超时 120 秒。
 
-Internet Archive 来源使用官方 Advanced Search 与 Metadata API 搜索 `mediatype:audio` 条目，再展开其中大小不超过 128 MiB 的 MP3、Ogg Vorbis 和 FLAC 文件；播放地址只由已验证的条目标识与文件名构造。授权不明确的公开文件可播放但不显示下载，只有带明确 Creative Commons 或 Public Domain 许可链接的文件才允许经固定 `archive.org` Host 流式下载。
+Internet Archive 来源使用官方 Advanced Search 与 Metadata API 按标题、作者和主题搜索 `mediatype:audio` 条目，再展开其中大小不超过 128 MiB 的 MP3、Ogg/OGA、FLAC、M4A、AAC、Opus 和 WAV 文件；播放地址只由已验证的条目标识与文件名构造。授权不明确的公开文件可播放但不显示下载，只有带明确 Creative Commons 或 Public Domain 许可链接的文件才允许经固定 `archive.org` Host 流式下载。
 
 Audius 只开放官方 API 明确标记为可串流且未设置访问门槛的歌曲；下载也必须同时带有公开下载授权。公开只读搜索无需 Key，部署者若配置开发者 Key，该 Key 始终只留在服务端；不处理用户登录、付费、关注或 NFT 门槛。使用前应阅读并接受 [Audius API Terms](https://audius.co/legal/api-terms)，开发者 Key 为可选项：
 

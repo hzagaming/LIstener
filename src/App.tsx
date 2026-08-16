@@ -2266,12 +2266,12 @@ function App() {
                   })}
                 </div>
                 <div className="parseable-sources"><strong>{identifiableSources.length} 个平台已加入地址 / ID 解析白名单</strong><span>{identifiableSources.map(sourceLabel).join(' · ')}</span></div>
-                <p className="settings-note">静态版可直连 Apple Music、Audius、MusicBrainz、Wikimedia Commons 与 Internet Archive；Audius、Wikimedia Commons 与 Internet Archive 可提供公开完整音频，只有明确许可的曲目开放下载。YouTube Music 与其余平台名称搜索仍需部署服务端及对应 Key；会员、DRM、签名、地区限制和未授权下载不会被绕过。</p>
+                <p className="settings-note">静态版可直连 Apple Music、Audius、MusicBrainz、Wikimedia Commons 与 Internet Archive；Archive 已支持 MP3、Ogg/OGA、FLAC、M4A、AAC、Opus 与 WAV，开放来源只有明确许可的曲目提供下载。YouTube Music 与其余平台名称搜索仍需部署服务端及对应 Key；会员、DRM、签名、地区限制和未授权下载不会被绕过。</p>
               </section>
 
               <section className="account-panel settings-panel settings-panel--project">
                 <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
-                <p>Listener 1.0.1 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <p>Listener 1.2.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
                 <div className="project-links">
                   {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
                 </div>

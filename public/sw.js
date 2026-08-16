@@ -1,4 +1,4 @@
-const CACHE = 'listener-shell-v1.0.1'
+const CACHE = 'listener-shell-v1.2.0'
 const SHELL = ['./', './favicon.svg', './manifest.webmanifest']
 
 self.addEventListener('install', (event) => {

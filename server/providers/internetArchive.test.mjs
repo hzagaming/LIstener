@@ -14,6 +14,11 @@ const openItem = {
     { name: '01 Song.mp3', title: 'Song One', artist: 'File Artist', format: 'VBR MP3', size: '12345', length: '3:05' },
     { name: '02 Song.ogg', format: 'Ogg Vorbis', size: '23456', length: '62.4' },
     { name: '03 Song.flac', format: 'Flac', size: '34567' },
+    { name: '04 Song.m4a', format: 'M4A', size: '45678' },
+    { name: '05 Song.aac', format: 'AAC', size: '56789' },
+    { name: '06 Song.opus', format: 'Ogg Opus', size: '67890' },
+    { name: '07 Song.wav', format: 'WAVE', size: '78901' },
+    { name: '08 Song.oga', format: 'Ogg Vorbis', size: '89012' },
     { name: 'cover.jpg', format: 'JPEG', size: '1234' },
   ],
 }
@@ -44,6 +49,11 @@ test('searches Archive audio items and expands safe browser-playable files', asy
     'open-concert/01%20Song.mp3',
     'open-concert/02%20Song.ogg',
     'open-concert/03%20Song.flac',
+    'open-concert/04%20Song.m4a',
+    'open-concert/05%20Song.aac',
+    'open-concert/06%20Song.opus',
+    'open-concert/07%20Song.wav',
+    'open-concert/08%20Song.oga',
   ])
   assert.deepEqual(tracks[0], {
     id: 'open-concert/01%20Song.mp3',
@@ -59,16 +69,17 @@ test('searches Archive audio items and expands safe browser-playable files', asy
     capabilities: { playback: 'full', lyrics: false, download: true },
   })
   assert.equal(tracks[2].quality, 'lossless')
+  assert.equal(tracks[6].quality, 'lossless')
   const search = requests[0]
   assert.equal(search.url.origin, 'https://archive.org')
   assert.equal(search.url.pathname, '/advancedsearch.php')
-  assert.equal(search.url.searchParams.get('q'), '(title:"public concert" OR creator:"public concert") AND mediatype:audio AND NOT access-restricted-item:true')
+  assert.equal(search.url.searchParams.get('q'), '(title:"public concert" OR creator:"public concert" OR subject:"public concert") AND mediatype:audio AND NOT access-restricted-item:true')
   assert.deepEqual(search.url.searchParams.getAll('fl[]'), ['identifier', 'mediatype', 'title', 'creator'])
   assert.equal(search.url.searchParams.get('rows'), '10')
   assert.equal(search.url.searchParams.get('page'), '3')
   assert.equal(search.url.searchParams.get('output'), 'json')
   assert.equal(search.options.redirect, 'manual')
-  assert.equal(search.options.headers['User-Agent'], 'Listener/1.0.1 (+https://github.com/hzagaming/LIstener)')
+  assert.equal(search.options.headers['User-Agent'], 'Listener/1.2.0 (+https://github.com/hzagaming/LIstener)')
   assert.equal(provider.maxSearchResults, 10)
   assert.deepEqual(provider.capabilities, { search: true, playback: true, lyrics: false, download: true })
 })

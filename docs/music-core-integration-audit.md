@@ -56,7 +56,7 @@ QQ、酷狗等平台没有接入逆向私有 API；未配置 Brave Search Key �
 2. `LocalFixtureProvider`、LRC 时间轴解析、指定 Provider/分页搜索、Provider 列表和版本化响应均已实现，并由离线集成测试覆盖。
 3. 搜索、详情和歌词使用有界进程内缓存；完整故障使用短期负缓存，播放临时地址不持久化。
 4. Provider 健康状态、来源级错误、API 限流、结构化请求日志和敏感信息脱敏已统一。
-5. 本地开发由 `server/dev.mjs` 同时启动 API 与 Vite；Pages 和无 Node API 的生产构建使用 Apple、Audius、MusicBrainz 与 Wikimedia Commons 公共聚合。公共适配器限制 Host、响应大小、超时和 MusicBrainz 每秒一次请求，来源故障相互隔离。
+5. 本地开发由 `server/dev.mjs` 同时启动 API 与 Vite；Pages 和无 Node API 的生产构建使用 Apple、Audius、MusicBrainz、Wikimedia Commons 与 Internet Archive 公共聚合。公共适配器限制 Host、响应大小、超时和 MusicBrainz 每秒一次请求，来源故障相互隔离。
 6. 当前使用单机 SQLite，仍无共享缓存和分布式限流；多实例生产环境需要外部基础设施。QQ、酷狗等没有已确认官方目录 API 的来源通过受控网页索引补充名称搜索，但不宣称可播放。
 7. 仓库仍缺少根 `LICENSE`；发布者必须先确定项目许可证。参考项目只做 clean-room 架构研究，没有复制其代码。
 

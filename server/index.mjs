@@ -5,6 +5,7 @@ import { createAppleProvider } from './providers/apple.mjs'
 import { createAudiusProvider } from './providers/audius.mjs'
 import { createMusicBrainzProvider } from './providers/musicbrainz.mjs'
 import { createWikimediaProvider } from './providers/wikimedia.mjs'
+import { createInternetArchiveProvider } from './providers/internetArchive.mjs'
 import { createNeteaseProvider } from './providers/netease.mjs'
 import { createYouTubeProvider } from './providers/youtube.mjs'
 import { catalogWebSources, createWebCatalogProvider } from './providers/webCatalog.mjs'
@@ -44,6 +45,9 @@ if (selected('musicbrainz')) {
 }
 if (selected('wikimedia')) {
   providers.push(createWikimediaProvider(providerHttp))
+}
+if (selected('internetarchive')) {
+  providers.push(createInternetArchiveProvider(providerHttp))
 }
 if (selected('audius')) {
   providers.push(createAudiusProvider({

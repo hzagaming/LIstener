@@ -61,7 +61,7 @@ HTTP validation
 
 任何 Provider 故障都不阻断其他来源，但残缺聚合不写正缓存。页码、来源和 schema 版本进入缓存 Key。
 
-本地 `npm run dev` 同时启动 Node API 与 Vite，开发前端通过同源 `/api` 代理使用默认 Provider；GitHub Pages 生产构建使用浏览器安全的 Apple、Audius、MusicBrainz 与 Wikimedia Commons 公共聚合，单来源故障独立降级。
+本地 `npm run dev` 同时启动 Node API 与 Vite，开发前端通过同源 `/api` 代理使用默认 Provider；GitHub Pages 生产构建使用浏览器安全的 Apple、Audius、MusicBrainz、Wikimedia Commons 与 Internet Archive 公共聚合，单来源故障独立降级。
 
 ## 安全策略
 

@@ -29,6 +29,28 @@ test('streams authorized Wikimedia audio without buffering it in the application
   assert.deepEqual([...Buffer.concat(chunks)], [1, 2, 3])
 })
 
+test('streams licensed Internet Archive audio across official download hosts', async () => {
+  const calls = []
+  const download = createAudioDownloader({
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options })
+      if (calls.length === 1) {
+        return new Response(null, { status: 302, headers: { location: 'https://ia801.example.us.archive.org/file.mp3' } })
+      }
+      return new Response(new Uint8Array([1]), { headers: { 'content-type': 'audio/mpeg', 'content-length': '1' } })
+    },
+  })
+
+  const upstream = await download({ source: 'internetarchive', url: 'https://archive.org/download/open/file.mp3' })
+
+  assert.equal(upstream.contentType, 'audio/mpeg')
+  assert.deepEqual(calls.map(({ url }) => url), [
+    'https://archive.org/download/open/file.mp3',
+    'https://ia801.example.us.archive.org/file.mp3',
+  ])
+  assert.equal(calls[1].options.headers['User-Agent'], 'Listener/1.0.0 (+https://github.com/hzagaming/LIstener)')
+})
+
 test('rejects unsafe hosts, redirects, MIME types, and oversized audio', async () => {
   const download = createAudioDownloader({
     maxBytes: 3,

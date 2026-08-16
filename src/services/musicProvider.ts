@@ -30,6 +30,7 @@ const labels: Record<MusicSource, string> = {
   musicbrainz: 'MusicBrainz',
   audius: 'Audius',
   wikimedia: 'Wikimedia Commons',
+  internetarchive: 'Internet Archive',
   local: '本地音乐',
   demo: '演示源',
   fixture: '离线测试源',

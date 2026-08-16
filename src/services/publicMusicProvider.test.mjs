@@ -84,6 +84,19 @@ const wikimediaFixture = {
   }],
 }
 
+const archiveItemFixture = {
+  metadata: {
+    identifier: 'open-concert',
+    mediatype: 'audio',
+    title: 'Open Concert',
+    creator: 'Open Artist',
+    licenseurl: 'https://creativecommons.org/licenses/by/4.0/',
+  },
+  files: [
+    { name: 'public song.mp3', title: 'Public Song', format: 'VBR MP3', size: '12345', length: '3:05' },
+  ],
+}
+
 const fixtureFetch = (requests, failedOrigin = '') => async (input, options = {}) => {
   const url = new URL(input)
   requests.push({ url, options })
@@ -95,10 +108,15 @@ const fixtureFetch = (requests, failedOrigin = '') => async (input, options = {}
     return Response.json(url.pathname.endsWith('/') ? { recordings: [musicBrainzFixture] } : musicBrainzFixture)
   }
   if (url.origin === 'https://commons.wikimedia.org') return Response.json({ query: { pages: [wikimediaFixture] } })
+  if (url.origin === 'https://archive.org') {
+    return Response.json(url.pathname === '/advancedsearch.php'
+      ? { response: { docs: [{ identifier: 'open-concert', mediatype: 'audio' }] } }
+      : archiveItemFixture)
+  }
   throw new Error(`unexpected request: ${url}`)
 }
 
-test('aggregates four keyless browser sources without letting one outage hide the others', async () => {
+test('aggregates five keyless browser sources without letting one outage hide the others', async () => {
   const requests = []
   const provider = createPublicMusicProvider({
     apple,
@@ -109,11 +127,38 @@ test('aggregates four keyless browser sources without letting one outage hide th
 
   const page = await provider.searchPage('Dua Lipa', { pageSize: 8 })
 
-  assert.deepEqual(page.tracks.map(({ source }) => source), ['audius', 'apple', 'musicbrainz'])
+  assert.deepEqual(page.tracks.map(({ source }) => source), ['audius', 'internetarchive', 'apple', 'musicbrainz'])
   assert.equal(page.hasMore, false)
   assert.equal(requests.some(({ url }) => url.searchParams.has('api_key')), false)
   assert.equal(requests.some(({ url }) => url.origin === 'https://commons.wikimedia.org'), true)
   assert.equal(page.tracks.find(({ source }) => source === 'audius').capabilities.playback, 'full')
+})
+
+test('searches playable Internet Archive files and only downloads explicit open licenses', async () => {
+  const requests = []
+  const provider = createPublicMusicProvider({ apple, fallback, fetchImpl: fixtureFetch(requests) })
+
+  const page = await provider.searchPage('Public', { provider: 'internetarchive', page: 2, pageSize: 3 })
+  const [result] = page.tracks
+
+  assert.equal(result.id, 'open-concert/public%20song.mp3')
+  assert.equal(result.audioUrl, 'https://archive.org/download/open-concert/public%20song.mp3')
+  assert.deepEqual(result.capabilities, { playback: 'full', lyrics: false, download: true })
+  assert.equal(requests[0].url.pathname, '/advancedsearch.php')
+  assert.equal(requests[0].url.searchParams.get('page'), '2')
+  assert.equal(await provider.resolve(result), result.audioUrl)
+  assert.deepEqual(await provider.download(result), { url: result.audioUrl, filename: 'Public Song.mp3' })
+
+  const unlicensed = createPublicMusicProvider({
+    apple,
+    fallback,
+    fetchImpl: async (input) => Response.json(new URL(input).pathname === '/advancedsearch.php'
+      ? { response: { docs: [{ identifier: 'open-concert', mediatype: 'audio' }] } }
+      : { ...archiveItemFixture, metadata: { ...archiveItemFixture.metadata, licenseurl: undefined } }),
+  })
+  const [track] = (await unlicensed.searchPage('Public', { provider: 'internetarchive' })).tracks
+  assert.equal(track.capabilities.download, false)
+  await assert.rejects(() => unlicensed.download(track), (error) => error.code === 'CAPABILITY_UNAVAILABLE')
 })
 
 test('searches Audius directly with honest pagination, playback, and download capabilities', async () => {
@@ -246,10 +291,10 @@ test('reports only responsive public sources and respects the MusicBrainz one-re
   assert.deepEqual(waits, [1_000])
 
   const status = await provider.status()
-  assert.deepEqual(status.sources, ['apple', 'audius', 'musicbrainz'])
+  assert.deepEqual(status.sources, ['apple', 'audius', 'musicbrainz', 'internetarchive'])
   assert.equal(status.capabilities.audius.download, true)
   assert.equal(status.capabilities.musicbrainz.playback, false)
-  assert.deepEqual(publicMusicSources, ['apple', 'audius', 'musicbrainz', 'wikimedia'])
+  assert.deepEqual(publicMusicSources, ['apple', 'audius', 'musicbrainz', 'wikimedia', 'internetarchive'])
 })
 
 test('bounds the whole status probe so one stalled source cannot hold the UI open', async () => {

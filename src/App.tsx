@@ -44,7 +44,7 @@ const searchPageSize = 50
 const searchMaxPages = 10
 const searchResultLimit = searchPageSize * searchMaxPages
 const identifiableSources: MusicSource[] = musicSources.filter((source) => !['demo', 'local', 'fixture'].includes(source))
-const publicBrowserSources = new Set<MusicSource>(['apple', 'audius', 'musicbrainz', 'wikimedia'])
+const publicBrowserSources = new Set<MusicSource>(['apple', 'audius', 'musicbrainz', 'wikimedia', 'internetarchive'])
 const sourceParsingNotes: Partial<Record<MusicSource, string>> = {
   qmkg: '全民 K 歌原生能力仅支持 ID 或地址解析；配置公开网页目录后可检索已索引作品页',
   youtube: 'YouTube Music 使用官方 Data API 搜索元数据，不抽取音视频',
@@ -2078,7 +2078,7 @@ function App() {
                 </select>
                 <button className="primary-button" disabled={isIdentifying} onClick={() => void identifyInput()}>{isIdentifying ? '正在识别…' : '解析地址 / ID'}</button>
                 <span id="search-guidance">{publicBrowserMode
-                  ? 'Pages 可直接查询 4 个公共来源，并在本地识别全部已列平台的地址与 ID。'
+                  ? 'Pages 可直接查询 5 个公共来源，并在本地识别全部已列平台的地址与 ID。'
                   : sourceParsingNotes[identifySource] ?? '平台地址与纯 ID 均需点击解析；纯 ID 请先选择平台。'}</span>
               </div>
               {identification && (
@@ -2102,7 +2102,7 @@ function App() {
               </div>
             </div>
             <section className="results-section">
-              {searchDegraded && <div className="search-warning" role="alert"><Sparkles /><span><strong>{publicSearchFallback ? '聚合服务离线，已切换公共搜索' : demoSearchFallback ? '聚合服务异常，当前为演示结果' : '所选音乐源暂不可用'}</strong><small>{publicSearchFallback ? '当前由 Apple Music、Audius、MusicBrainz 与 Wikimedia Commons 提供可用结果。' : demoSearchFallback ? '真实音乐源暂时不可用，以下为演示数据。' : '没有返回回退数据，请检查服务配置后重试。'}</small></span><button onClick={() => setSearchRevision((value) => value + 1)}>重试</button></div>}
+              {searchDegraded && <div className="search-warning" role="alert"><Sparkles /><span><strong>{publicSearchFallback ? '聚合服务离线，已切换公共搜索' : demoSearchFallback ? '聚合服务异常，当前为演示结果' : '所选音乐源暂不可用'}</strong><small>{publicSearchFallback ? '当前由 Apple Music、Audius、MusicBrainz、Wikimedia Commons 与 Internet Archive 提供可用结果。' : demoSearchFallback ? '真实音乐源暂时不可用，以下为演示数据。' : '没有返回回退数据，请检查服务配置后重试。'}</small></span><button onClick={() => setSearchRevision((value) => value + 1)}>重试</button></div>}
               <div className="section-heading"><div><span className="section-index">{String(displayResults.length).padStart(2, '0')}</span><h2>{resultHeading ? `“${resultHeading}” 的结果` : '全部音乐'}</h2></div><span className="searching-state" aria-live="polite">{isSearching ? '正在检索音乐源…' : publicSearchFallback ? `公共搜索 · ${resultPlaybackSummary} · 共 ${displayResults.length} 首` : demoSearchFallback ? `演示结果 ${displayResults.length} 首` : searchDegraded ? '搜索失败' : `${resultPlaybackSummary} · 共 ${displayResults.length} 首${hiddenByFilters ? ` · 已过滤 ${hiddenByFilters} 首` : ''}`}</span></div>
               <div className="track-list" role="list">
                 {displayResults.length ? displayResults.map((track, index) => (
@@ -2266,12 +2266,12 @@ function App() {
                   })}
                 </div>
                 <div className="parseable-sources"><strong>{identifiableSources.length} 个平台已加入地址 / ID 解析白名单</strong><span>{identifiableSources.map(sourceLabel).join(' · ')}</span></div>
-                <p className="settings-note">静态版可直连 Apple Music、Audius、MusicBrainz 与 Wikimedia Commons；Audius 与 Wikimedia Commons 可提供来源明确授权的完整音频。YouTube Music 与其余平台名称搜索仍需部署服务端及对应 Key；会员、DRM、签名、地区限制和未授权下载不会被绕过。</p>
+                <p className="settings-note">静态版可直连 Apple Music、Audius、MusicBrainz、Wikimedia Commons 与 Internet Archive；Audius、Wikimedia Commons 与 Internet Archive 可提供公开完整音频，只有明确许可的曲目开放下载。YouTube Music 与其余平台名称搜索仍需部署服务端及对应 Key；会员、DRM、签名、地区限制和未授权下载不会被绕过。</p>
               </section>
 
               <section className="account-panel settings-panel settings-panel--project">
                 <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
-                <p>Listener 0.10.4 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <p>Listener 1.0.0 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
                 <div className="project-links">
                   {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
                 </div>

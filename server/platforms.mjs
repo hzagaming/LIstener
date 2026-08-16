@@ -5,6 +5,7 @@ const qingtingId = /^\d+\|\d+$/
 const musicBrainzId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 const audiusId = /^[A-Za-z0-9_-]{1,128}$/
 const youtubeId = /^[A-Za-z0-9_-]{11}$/
+const internetArchiveId = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
 const domainAddress = /^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?::\d{1,5})?(?:[/?#].*)?$/i
 
 const matchPath = (url, pattern) => pattern.exec(url.pathname)?.[1]
@@ -189,6 +190,14 @@ const definitions = [
     validate: (id) => numeric.test(id),
     match: (url) => url.searchParams.get('curid') ?? undefined,
     canonical: (id) => `https://commons.wikimedia.org/?curid=${id}`,
+  },
+  {
+    source: 'internetarchive',
+    hosts: ['archive.org'],
+    validate: (id) => internetArchiveId.test(id),
+    match: (url) => matchPath(url, /^\/details\/([A-Za-z0-9][A-Za-z0-9._-]{0,99})\/?$/)
+      ?? matchPath(url, /^\/download\/([A-Za-z0-9][A-Za-z0-9._-]{0,99})(?:\/.*)?$/),
+    canonical: (id) => `https://archive.org/details/${id}/`,
   },
 ]
 

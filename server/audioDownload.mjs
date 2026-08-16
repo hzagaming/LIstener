@@ -1,7 +1,10 @@
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
-const sourceHosts = { wikimedia: ['upload.wikimedia.org'] }
+const sourceHosts = {
+  wikimedia: ['upload.wikimedia.org'],
+  internetarchive: ['archive.org'],
+}
 
 const trustedUrl = (value, source) => {
   const allowed = sourceHosts[source]
@@ -37,7 +40,7 @@ export const createAudioDownloader = ({ fetchImpl = globalThis.fetch, maxBytes =
     response = await fetchImpl(target, {
       headers: {
         Accept: 'audio/*,application/ogg',
-        'User-Agent': 'Listener/0.10.4 (+https://github.com/hzagaming/LIstener)',
+        'User-Agent': 'Listener/1.0.0 (+https://github.com/hzagaming/LIstener)',
       },
       redirect: 'manual',
       signal: requestSignal,

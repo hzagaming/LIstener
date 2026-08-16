@@ -164,7 +164,7 @@ button:not(:disabled):active, a:active { transform: translateY(1px); }
 .track-card__meta p { font-size: 12px; color: var(--muted); margin: 0 0 7px; }
 .track-card__meta small { display: block; margin: -3px 0 6px; color: #8d4934; font-size: 9px; font-weight: 600; }
 .source { display: inline-flex; font-size: 10px; line-height: 1; border: 1px solid; border-radius: 2px; padding: 3px 5px; color: #806c5e; }
-.source--netease { color: #9b2d30; }.source--qq { color: #68744f; }.source--kugou { color: #526f84; }.source--youtube { color: #b3261e; }.source--apple { color: #9b3f52; }.source--musicbrainz { color: #8a4f76; }.source--audius { color: #6b4db5; }.source--wikimedia { color: #735b3e; }.source--demo { color: #805f82; }
+.source--netease { color: #9b2d30; }.source--qq { color: #68744f; }.source--kugou { color: #526f84; }.source--youtube { color: #b3261e; }.source--apple { color: #9b3f52; }.source--musicbrainz { color: #8a4f76; }.source--audius { color: #6b4db5; }.source--wikimedia { color: #735b3e; }.source--internetarchive { color: #8b4c34; }.source--demo { color: #805f82; }
 .track-card > .like-button { position: absolute; right: 0; bottom: 20px; min-width: 40px; min-height: 40px; display: grid; place-items: center; }
 .cover-download-card { position: absolute; right: 38px; bottom: 20px; width: 40px; height: 40px; border: 0; background: none; color: #77736b; display: grid; place-items: center; cursor: pointer; }
 .cover-download-card svg { width: 15px; }

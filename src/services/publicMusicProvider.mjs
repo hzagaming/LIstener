@@ -1,6 +1,16 @@
 import { identifyMusicInput } from '../../server/platforms.mjs'
 import { abortableDelay, createRequestSignal } from '../requestPolicy.mjs'
 import { createSearchFallbackError, diversifyRankedTracks, playbackRank, searchFallbackTracks } from '../searchLogic.mjs'
+import {
+  archiveDownload,
+  archiveMediaUrl,
+  archiveSearchIdentifiers,
+  archiveSearchUrl,
+  archiveTrackId,
+  interleaveArchiveTracks,
+  normalizeArchiveItem,
+  parseArchiveTrackId,
+} from '../../server/internetArchiveLogic.mjs'
 
 const AUDIUS_API = 'https://api.audius.co/v1/'
 const MUSICBRAINZ_API = 'https://musicbrainz.org/ws/2/recording/'
@@ -16,9 +26,10 @@ const capabilities = {
   audius: { search: true, playback: true, lyrics: false, download: true },
   musicbrainz: { search: true, playback: false, lyrics: false, download: false },
   wikimedia: { search: true, playback: true, lyrics: false, download: true },
+  internetarchive: { search: true, playback: true, lyrics: false, download: true },
 }
 
-export const publicMusicSources = ['apple', 'audius', 'musicbrainz', 'wikimedia']
+export const publicMusicSources = ['apple', 'audius', 'musicbrainz', 'wikimedia', 'internetarchive']
 
 const safeHttpsUrl = (value, allowedHost) => {
   if (typeof value !== 'string' || !value || value.length > 8_192) return ''
@@ -332,14 +343,41 @@ export const createPublicMusicProvider = ({
     return result
   }
 
+  const archiveMetadata = async (identifier, signal) => normalizeArchiveItem(
+    await request(new URL(`/metadata/${encodeURIComponent(identifier)}`, 'https://archive.org'), signal, 'Internet Archive'),
+    identifier,
+  )
+
+  const searchInternetArchive = async (query, pageSize, page, signal) => {
+    const payload = await request(archiveSearchUrl(query, page), signal, 'Internet Archive')
+    const identifiers = archiveSearchIdentifiers(payload)
+    const settled = await Promise.allSettled(identifiers.map((identifier) => archiveMetadata(identifier, signal)))
+    if (signal?.aborted) throw signal.reason
+    const groups = settled.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+    return interleaveArchiveTracks(groups, pageSize)
+  }
+
+  const lookupInternetArchive = async (id, signal) => {
+    const requested = parseArchiveTrackId(id)
+    const tracks = await archiveMetadata(requested.identifier, signal)
+    const track = requested.filename
+      ? tracks.find((candidate) => candidate.id === archiveTrackId(requested.identifier, requested.filename))
+      : tracks[0]
+    if (!track) throw new Error('invalid Internet Archive response')
+    return track
+  }
+
   const searchSource = async (source, query, pageSize, page, signal) => {
     if (source === 'apple') return apple.searchPage(query, { provider: 'apple', pageSize, page }, signal)
     const tracks = source === 'audius'
       ? await searchAudius(query, pageSize, page, signal)
       : source === 'musicbrainz'
         ? await searchMusicBrainz(query, pageSize, page, signal)
-        : await searchWikimedia(query, pageSize, page, signal)
-    return { tracks, page, hasMore: tracks.length >= Math.min(source === 'wikimedia' ? 10 : 50, pageSize) }
+        : source === 'wikimedia'
+          ? await searchWikimedia(query, pageSize, page, signal)
+          : await searchInternetArchive(query, pageSize, page, signal)
+    const sourceLimit = ['wikimedia', 'internetarchive'].includes(source) ? 10 : 50
+    return { tracks, page, hasMore: tracks.length >= Math.min(sourceLimit, pageSize) }
   }
 
   const provider = {
@@ -392,6 +430,11 @@ export const createPublicMusicProvider = ({
       if (track.source === 'wikimedia') {
         return safeHttpsUrl(track.audioUrl, 'upload.wikimedia.org') || (await lookupWikimedia(track.id, signal)).audioUrl
       }
+      if (track.source === 'internetarchive') {
+        const requested = parseArchiveTrackId(track.id)
+        const expected = requested.filename ? archiveMediaUrl(requested.identifier, requested.filename) : ''
+        return track.audioUrl === expected ? expected : (await lookupInternetArchive(track.id, signal)).audioUrl
+      }
       return fallback.resolve(track, signal)
     },
 
@@ -409,6 +452,7 @@ export const createPublicMusicProvider = ({
       }
       if (match.source === 'musicbrainz') return lookupMusicBrainz(match.id, signal)
       if (match.source === 'wikimedia') return lookupWikimedia(match.id, signal)
+      if (match.source === 'internetarchive') return lookupInternetArchive(match.id, signal)
       return fallback.lookup(match, signal)
     },
 
@@ -427,6 +471,7 @@ export const createPublicMusicProvider = ({
         if (!url) throw Object.assign(new Error('Audius download is not publicly authorized'), { code: 'CAPABILITY_UNAVAILABLE' })
         return { url, filename: filename(data.title, url) }
       }
+      if (track.source === 'internetarchive') return archiveDownload(await lookupInternetArchive(track.id, signal))
       return fallback.download(track, signal)
     },
 
@@ -437,6 +482,7 @@ export const createPublicMusicProvider = ({
         searchAudius('Listener', 1, 1, statusSignal).then(() => 'audius'),
         searchMusicBrainz('Listener', 1, 1, statusSignal).then(() => 'musicbrainz'),
         searchWikimedia('music', 1, 1, statusSignal).then(() => 'wikimedia'),
+        searchInternetArchive('music', 1, 1, statusSignal).then(() => 'internetarchive'),
       ])
       if (signal?.aborted) throw signal.reason
       const sources = publicMusicSources.filter((source) => checks.some((result) => result.status === 'fulfilled' && result.value === source))

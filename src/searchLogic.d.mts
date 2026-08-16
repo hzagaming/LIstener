@@ -25,7 +25,7 @@ export declare const diversifyRankedTracks: <T extends {
   source?: unknown
   audioUrl?: unknown
   capabilities: { playback: string }
-}>(tracks: T[] | null | undefined, limit: number) => T[]
+}>(tracks: T[] | null | undefined, limit: number, options?: { prioritizePlayback?: boolean }) => T[]
 export declare const mergeSearchPages: <T extends { source?: unknown; id?: unknown }>(
   current: T[] | null | undefined,
   incoming: T[] | null | undefined,

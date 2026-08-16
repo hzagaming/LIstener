@@ -48,9 +48,9 @@ export const prioritizePlayableTracks = (tracks) => {
   )).map(({ track }) => track)
 }
 
-export const diversifyRankedTracks = (tracks, limit) => {
+export const diversifyRankedTracks = (tracks, limit, options = {}) => {
   if (!Array.isArray(tracks) || !Number.isInteger(limit) || limit < 1) return []
-  const ranked = prioritizePlayableTracks(tracks)
+  const ranked = options.prioritizePlayback === false ? [...tracks] : prioritizePlayableTracks(tracks)
   const boundedLimit = Math.min(limit, ranked.length)
   const priorityCount = Math.ceil(boundedLimit / 2)
   const selected = ranked.slice(0, priorityCount)
@@ -99,17 +99,20 @@ const textRelevance = (track, query) => {
   const title = searchableText(track?.title)
   const artist = searchableText(track?.artist)
   const album = searchableText(track?.album)
-  if (title === query) return 0
-  if (artist === query) return 1
-  if (title.includes(query)) return 2
-  if (artist.includes(query)) return 3
-  if (album.includes(query)) return 4
+  if (title === query && artist === query) return 0
+  if (title === query) return 1
+  if (artist === query) return 2
+  if (title.includes(query)) return 3
+  if (artist.includes(query)) return 4
+  if (album.includes(query)) return 5
   const text = `${title} ${artist} ${album}`
   const terms = query.split(/\s+/).filter(Boolean)
-  if (terms.length && terms.every((term) => text.includes(term))) return 5
-  if (terms.some((term) => text.includes(term))) return 6
-  return 7
+  if (terms.length && terms.every((term) => text.includes(term))) return 6
+  if (terms.some((term) => text.includes(term))) return 7
+  return 8
 }
+
+const relevanceTier = (rank) => rank === 0 ? 0 : rank <= 2 ? 1 : rank <= 4 ? 2 : rank - 2
 
 export const refineSearchTracks = (tracks, options = {}) => {
   if (!Array.isArray(tracks)) return []
@@ -125,8 +128,12 @@ export const refineSearchTracks = (tracks, options = {}) => {
     if (duration === 'long') return Number.isFinite(seconds) && seconds > 300
     return true
   })
-  if (sort === 'relevance') return filtered.map((track, index) => ({ track, index })).sort((left, right) => (
-    textRelevance(left.track, query) - textRelevance(right.track, query)
+  if (sort === 'relevance') return filtered.map((track, index) => ({
+    track, index, relevance: textRelevance(track, query), playback: playbackRank(track),
+  })).sort((left, right) => (
+    relevanceTier(left.relevance) - relevanceTier(right.relevance)
+    || left.playback - right.playback
+    || left.relevance - right.relevance
     || left.index - right.index
   )).map(({ track }) => track)
   return filtered.map((track, index) => ({ track, index })).sort((left, right) => {

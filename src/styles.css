@@ -523,6 +523,7 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .topbar { height: 66px; padding: 0 17px; gap: 13px; }
   .mobile-menu { display: grid !important; }
   .mobile-menu, .sidebar__close, .avatar { min-width: 44px; min-height: 44px; }
+  .nav-group button { min-height: 44px; }
   .search-box { flex: 1; width: auto; }
   .search-box, .primary-button, .secondary-button { min-height: 44px; }
   .search-box kbd, .source-selector { display: none; }
@@ -543,6 +544,11 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .search-hero { padding: 24px 0 12px; }
   .search-hero h1, .library-heading h1 { font-size: 44px; }
   .search-hero h1 { margin: 8px 0 14px; font-size: clamp(34px, 10.5vw, 44px); white-space: nowrap; }
+  .search-input-wrap input, .search-input-wrap button { min-height: 44px; }
+  .search-input-wrap button { min-width: 44px; }
+  .search-hints button, .search-explore button { min-width: 44px; min-height: 44px; }
+  .source-filters button, .playback-filters button { min-height: 44px; }
+  .advanced-search select, .advanced-search > button, .search-explore summary, .id-resolver select, .id-resolver .primary-button { min-height: 44px; }
   .track-row { min-height: 84px; grid-template-columns: 44px 38px minmax(90px, 1fr); gap: 6px 9px; padding: 7px 0; }
   .track-row__play { min-width: 44px; }
   .track-row .cover { width: 38px; height: 38px; }
@@ -566,7 +572,7 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .advanced-search { grid-template-columns: 1fr 1fr; margin-top: 14px; }
   .advanced-search > button { grid-column: 1 / -1; justify-self: start; }
   .search-explore { margin-top: 12px; }
-  .search-explore button { min-height: 36px; }
+  .search-explore button { min-height: 44px; }
   .id-resolver { margin-top: 14px; }
   .source-filters { margin-top: 16px; }
   .playback-filters { margin-top: 8px; }
@@ -618,7 +624,7 @@ input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
   .cover-play, .playlist-card__play { opacity: 1; transform: none; }
   .track-row__play span { display: none; }
   .track-row__play svg { display: inline; }
-  .search-hints button, .source-filters button, .playback-filters button, .search-explore button { min-height: 36px; }
+  .search-hints button, .source-filters button, .playback-filters button, .search-explore button { min-height: 44px; }
   .search-hints button { padding-inline: 4px; }
 }
 

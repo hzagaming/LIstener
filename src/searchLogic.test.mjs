@@ -156,6 +156,31 @@ test('ranks direct text matches ahead of unrelated cross-source results', () => 
   }).map(({ id }) => id), ['exact', 'artist', 'title', 'unrelated'])
 })
 
+test('prefers playable exact artist matches over metadata-only exact title matches', () => {
+  const tracks = [
+    { id: 'title-metadata', title: 'Taylor Swift', artist: 'Public Artist', audioUrl: '', capabilities: { playback: 'none' } },
+    { id: 'artist-preview', title: 'Cruel Summer', artist: 'Taylor Swift', audioUrl: 'https://audio.example/preview', capabilities: { playback: 'preview' } },
+    { id: 'artist-full', title: 'Style', artist: 'Taylor Swift', audioUrl: 'https://audio.example/full', capabilities: { playback: 'full' } },
+  ]
+
+  assert.deepEqual(refineSearchTracks(tracks, {
+    query: 'Taylor Swift', domain: 'all', duration: 'all', sort: 'relevance',
+  }).map(({ id }) => id), ['artist-full', 'artist-preview', 'title-metadata'])
+})
+
+test('source diversification can preserve explicit text relevance over unrelated playback', () => {
+  const tracks = [
+    { id: 'unrelated-full', source: 'audius', title: 'Newsreal Episode', artist: 'Fae', audioUrl: 'https://audio.example/unrelated', capabilities: { playback: 'full' } },
+    { id: 'exact-metadata', source: 'musicbrainz', title: 'Taylor Swift', artist: 'Taylor Swift', audioUrl: '', capabilities: { playback: 'none' } },
+    { id: 'related-full', source: 'audius', title: 'Taylor Swift Live', artist: 'Public Artist', audioUrl: 'https://audio.example/related', capabilities: { playback: 'full' } },
+  ]
+  const refined = refineSearchTracks(tracks, { query: 'Taylor Swift', sort: 'relevance' })
+
+  assert.deepEqual(diversifyRankedTracks(refined, refined.length, { prioritizePlayback: false }).map(({ id }) => id), [
+    'exact-metadata', 'related-full', 'unrelated-full',
+  ])
+})
+
 test('validates the versioned paginated search envelope', () => {
   const valid = { id: '1' }
   assert.deepEqual(parseSearchPage({

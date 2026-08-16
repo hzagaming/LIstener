@@ -787,7 +787,7 @@ function App() {
     const refined = refineSearchTracks(sourceResults, {
       query: resultQuery, domain: searchDomain, duration: searchDuration, sort: searchSort,
     })
-    return searchSort === 'relevance' ? diversifyRankedTracks(refined, refined.length) : refined
+    return searchSort === 'relevance' ? diversifyRankedTracks(refined, refined.length, { prioritizePlayback: false }) : refined
   }, [resultQuery, searchDomain, searchDuration, searchSort, sourceResults])
   const displayResults = useMemo(
     () => filterTracksByPlayback(refinedResults, playbackFilter),
@@ -2271,7 +2271,7 @@ function App() {
 
               <section className="account-panel settings-panel settings-panel--project">
                 <div className="account-panel__header"><div><span className="eyebrow">OPEN SOURCE</span><h2>项目与版本</h2></div><Github /></div>
-                <p>Listener 0.10.3 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
+                <p>Listener 0.10.4 · 开源仓库、问题反馈、提交历史与发行版入口。</p>
                 <div className="project-links">
                   {projectLinks.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><ExternalLink /></a>)}
                 </div>
